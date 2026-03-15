@@ -1,0 +1,87 @@
+import { QuickSQLiteConnection, open } from 'react-native-quick-sqlite';
+
+class DatabaseService {
+  private db: QuickSQLiteConnection | null = null;
+
+  async init() {
+    console.log('DB: Initializing database...');
+    try {
+      this.db = open({ name: 'expeno.db' });
+      console.log('DB: Database opened');
+
+      // Create expenses table
+      this.db.execute(`
+          CREATE TABLE IF NOT EXISTS expenses (
+            id TEXT PRIMARY KEY,
+            amount REAL,
+            category TEXT,
+            description TEXT,
+            date TEXT,
+            isAutoCategorized INTEGER,
+            smsSender TEXT,
+            smsText TEXT
+          );
+        `);
+      console.log('DB: Expenses table checked');
+
+      // Migration: add smsText column if it doesn't exist yet
+      try {
+        this.db.execute('ALTER TABLE expenses ADD COLUMN smsText TEXT');
+        console.log('DB: smsText column added (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
+
+
+      // Create categories table (with max spend)
+      this.db.execute(`
+          CREATE TABLE IF NOT EXISTS categories (
+            category TEXT PRIMARY KEY,
+            maxSpend REAL DEFAULT 0
+          );
+        `);
+      console.log('DB: Categories table checked');
+
+      // Create learned patterns table
+      this.db.execute(`
+          CREATE TABLE IF NOT EXISTS learned_patterns (
+            id TEXT PRIMARY KEY,
+            pattern TEXT,
+            action TEXT,
+            category TEXT
+          );
+        `);
+      console.log('DB: Patterns table checked');
+
+      // Initialize default categories
+      const categories = [
+        'Food & Stationary',
+        'Petrol + transport',
+        'Household',
+        'cloth + cosmetics',
+        'Medical',
+        'Gift + Natilekku',
+        'outing',
+        'Car/bike maintenance',
+      ];
+
+      for (const cat of categories) {
+        this.db.execute('INSERT OR IGNORE INTO categories (category, maxSpend) VALUES (?, ?)', [cat, 0]);
+      }
+      console.log('DB: Initialization complete');
+    } catch (error) {
+      console.error('DB: Initialization failed', error);
+      throw error;
+    }
+  }
+
+  getDb() {
+    if (!this.db) {
+        console.error('DB: getDb called but this.db is null!');
+        throw new Error('Database not initialized');
+    }
+    return this.db;
+  }
+}
+
+export const dbService = new DatabaseService();

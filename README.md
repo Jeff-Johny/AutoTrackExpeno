@@ -1,97 +1,89 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# AutoTrackExpeno 📱💸
 
-# Getting Started
+An **Android app** built with React Native that automatically tracks your expenses by reading SMS messages from your bank/UPI apps. It uses AI (DeepSeek) to categorize transactions and lets you confirm or ignore them with a single tap.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+- 📩 **SMS Listener** — Automatically detects spending SMS messages in real time
+- 🔄 **Offline Sync** — Catches SMS missed while the app was closed
+- 🤖 **AI Categorization** — Uses DeepSeek AI to identify and categorize transactions
+- 🧠 **Pattern Learning** — Remembers your choices to auto-categorize future SMS from the same sender
+- 📊 **Budget Tracking** — Set spending limits per category with alerts
+- 📋 **Auto-Tracked Summary** — Shows a summary popup of expenses auto-logged while app was away
+- 🗂 **Transaction Source** — Tap any transaction to see the original SMS that triggered it
+- 📤 **Excel Export** — Export your expenses as a spreadsheet
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Setup
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Prerequisites
 
-```sh
-# Using npm
+- Node.js >= 20
+- Android Studio + Android SDK
+- Java 17+
+
+### 1. Clone the repo
+
+```bash
+git clone https://github.com/YOUR_USERNAME/AutoTrackExpeno.git
+cd AutoTrackExpeno
+npm install
+```
+
+### 2. Configure API Keys
+
+This app uses the [DeepSeek API](https://platform.deepseek.com) for AI categorization.
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` and fill in your API key:
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here   # optional
+```
+
+> ⚠️ **Never commit your `.env` file.** It is already in `.gitignore`.
+
+### 3. Run the app
+
+```bash
+# Start Metro bundler
 npm start
 
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+# Run on Android emulator/device (new terminal)
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+### 4. Build a release APK
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```bash
+cd android && ./gradlew assembleRelease
+# Output: android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Then, and every time you update your native dependencies, run:
+## Permissions Required (Android)
 
-```sh
-bundle exec pod install
-```
+- `READ_SMS` — To read SMS when app is opened (offline sync)
+- `RECEIVE_SMS` — To listen for new SMS in real time
+- `POST_NOTIFICATIONS` — To send budget alert notifications (Android 13+)
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+## Tech Stack
 
-```sh
-# Using npm
-npm run ios
+| Layer | Technology |
+|---|---|
+| Framework | React Native 0.83 |
+| UI | React Native Paper |
+| AI | DeepSeek Chat API |
+| Database | SQLite (react-native-quick-sqlite) |
+| State | Zustand |
+| SMS | react-native-android-sms-listener + react-native-get-sms-android |
 
-# OR using Yarn
-yarn ios
-```
+## Contributing
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+1. Fork the repo
+2. Create your branch: `git checkout -b feature/my-feature`
+3. Copy `.env.example` → `.env` and add your keys
+4. Commit your changes (never commit `.env`)
+5. Open a Pull Request
