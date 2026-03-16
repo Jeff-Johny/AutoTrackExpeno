@@ -3,6 +3,8 @@ import { geminiService } from '../api/gemini';
 import { patternService } from './patterns';
 import { expenseService } from './expense';
 import { notificationService } from './notifications';
+import { dbService } from './db';
+
 
 // Use require to avoid potential ESM interop issues and allow for fallback
 let SmsListener: any;
@@ -71,21 +73,33 @@ export const smsService = {
 
         console.log('[SMS Service] Syncing recent SMS...');
         
-        // Look back 1 hour to catch missed SMS
-        const oneHourAgo = Date.now() - (60 * 60 * 1000);
+        // Look back 48 hours fallback, but use dbService.getLastSyncTimestamp if available
+        const fallbackWindow = 48 * 60 * 60 * 1000;
+        const lastSync = await dbService.getLastSyncTimestamp();
+        
+        let minDate = Date.now() - fallbackWindow;
+        if (lastSync) {
+            // Start from 1ms after the last processed message to avoid duplicates
+            minDate = lastSync + 1;
+            console.log('[SMS Service] Sync: Resuming from last sync timestamp:', new Date(minDate).toISOString());
+        } else {
+            console.log('[SMS Service] Sync: No previous sync found, using 48h fallback window');
+        }
 
         const filter = {
             box: 'inbox',
-            minDate: oneHourAgo,
-            read: 0, // Unread only ideally, though many apps mark as read automatically
+            minDate: minDate,
+            // Removed read: 0 filter because system/apps might mark messages as read.
+            // Using minDate (timestamp) is a more reliable way to detect NEW messages.
         };
 
         SmsAndroid.list(
             JSON.stringify(filter),
             (fail: any) => {
-                console.log('[SMS Service] Failed to sync SMS:', fail);
+                console.log('[SMS Service] Failed to list SMS for sync:', fail);
             },
             async (count: number, smsList: string) => {
+
                 console.log('[SMS Service] Found', count, 'recent SMS messages');
                 try {
                     const messages = JSON.parse(smsList);
@@ -96,7 +110,8 @@ export const smsService = {
                     const autoTrackedList: any[] = [];
 
                     for (const msg of sortedMessages) {
-                        const { body, address } = msg;
+                        const { body, address, _id } = msg;
+                        const smsId = _id ? _id.toString() : undefined;
 
                         // Check if already processed
                         const pattern = await patternService.checkPattern(body, address);
@@ -120,13 +135,15 @@ export const smsService = {
                                     isAutoCategorized: true,
                                     smsSender: address,
                                     smsText: body,
+                                    externalSmsId: smsId,
                                 });
                                 
                                 autoTrackedList.push({
                                     smsText: body,
                                     sender: address,
                                     aiResult,
-                                    categoryAssigned: pattern.category
+                                    categoryAssigned: pattern.category,
+                                    externalSmsId: smsId
                                 });
                             }
                             continue;
@@ -141,7 +158,8 @@ export const smsService = {
                                 smsText: body,
                                 sender: address,
                                 aiResult,
-                                isSync: true
+                                isSync: true,
+                                externalSmsId: smsId
                             });
                         }
                     }
@@ -151,9 +169,20 @@ export const smsService = {
                         console.log('[SMS Service] Sync: Emitting auto-tracked summary:', autoTrackedList.length, 'items');
                         onAutoTracked(autoTrackedList);
                     }
+
+                    // Update the last sync timestamp with the newest message found
+                    if (messages && messages.length > 0) {
+                        const newestDate = Math.max(...messages.map((m: any) => m.date));
+                        await dbService.setLastSyncTimestamp(newestDate);
+                        console.log('[SMS Service] Sync: Updated lastSyncTimestamp to', new Date(newestDate).toISOString());
+                    } else if (lastSync === null) {
+                        // If it's the first sync and no messages, just set it to now
+                        await dbService.setLastSyncTimestamp(Date.now());
+                    }
                 } catch (e) {
                     console.error('[SMS Service] Error processing synced SMS:', e);
                 }
+
             }
         );
     },
@@ -215,6 +244,7 @@ export const smsService = {
                                 isAutoCategorized: true,
                                 smsSender: originatingAddress,
                                 smsText: body,
+                                externalSmsId: message.timestamp?.toString(), // Use timestamp as weak ID if system ID missing
                             });
                             console.log('[SMS Service] ✅ Expense added successfully!');
                         } else {
@@ -233,12 +263,13 @@ export const smsService = {
                         onUnsure({
                             smsText: body,
                             sender: originatingAddress,
-                            aiResult
+                            aiResult,
+                            externalSmsId: message.timestamp?.toString()
                         });
                         notificationService.notify(
                             "Expense Detected",
                             `Detected Rs ${aiResult.amount} spending from ${originatingAddress}. Tap to confirm.`,
-                            { smsText: body, sender: originatingAddress, aiResult }
+                            { smsText: body, sender: originatingAddress, aiResult, externalSmsId: message.timestamp?.toString() }
                         );
                         console.log('[SMS Service] ✅ Popup should be displayed and notification sent now');
                     } else {

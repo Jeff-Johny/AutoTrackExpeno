@@ -18,6 +18,7 @@ interface AppState {
     setPatterns: (patterns: LearnedPattern[]) => void;
     setAutoTrackedSummary: (summary: any[] | null) => void;
     setUnsureData: (data: any | null) => void;
+    removeFromUnsureQueue: (index: number) => void;
 }
 export const useStore = create<AppState>((set) => ({
     expenses: [],
@@ -67,5 +68,10 @@ export const useStore = create<AppState>((set) => ({
                 return { unsureDataQueue: [...state.unsureDataQueue, data] };
             }
         }
+    }),
+    removeFromUnsureQueue: (index) => set((state) => {
+        const newQueue = [...state.unsureDataQueue];
+        newQueue.splice(index, 1);
+        return { unsureDataQueue: newQueue };
     }),
 }));

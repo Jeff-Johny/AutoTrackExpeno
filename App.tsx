@@ -133,6 +133,7 @@ const App = () => {
       isAutoCategorized: true,
       smsSender: unsureData.sender,
       smsText: unsureData.smsText,
+      externalSmsId: unsureData.externalSmsId,
     });
 
     // Learn this pattern

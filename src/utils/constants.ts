@@ -18,6 +18,7 @@ export interface Expense {
     isAutoCategorized: boolean;
     smsSender?: string;
     smsText?: string;
+    externalSmsId?: string;
 }
 
 export interface CategoryBudget {

@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { View, FlatList, StyleSheet, ScrollView } from 'react-native';
-import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Menu, Divider, Text, Title } from 'react-native-paper';
+import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Menu, Divider, Text, Title, Badge, Appbar } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 import { Expense } from '../utils/constants';
 
-const TransactionsScreen = () => {
+const TransactionsScreen = ({ navigation }: any) => {
     const expenses = useStore((state) => state.expenses);
     const categories = useStore((state) => state.categories);
+    const unsureQueueCount = useStore((state) => state.unsureDataQueue.length);
     const [addVisible, setAddVisible] = useState(false);
     const [amount, setAmount] = useState('');
     const [category, setCategory] = useState('');
@@ -43,39 +44,56 @@ const TransactionsScreen = () => {
         }
     };
 
+    const renderItem = ({ item }: { item: Expense }) => (
+        <List.Item
+            title={`Rs ${item.amount}`}
+            description={`${item.category} • ${formatDate(item.date)}`}
+            left={(props) => (
+                <List.Icon
+                    {...props}
+                    icon={item.smsSender ? "message-text-outline" : "plus-circle-outline"}
+                />
+            )}
+            onPress={() => {
+                setSelectedExpense(item);
+            }}
+            right={(props) => (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <IconButton
+                        icon="delete-outline"
+                        size={20}
+                        onPress={() => expenseService.deleteExpense(item.id)}
+                    />
+                    <List.Icon {...props} icon="chevron-right" />
+                </View>
+            )}
+        />
+    );
+
     return (
         <View style={styles.container}>
+            <Appbar.Header>
+                <Appbar.Content title="Transactions" />
+                <View>
+                    <Appbar.Action 
+                        icon="bell-outline" 
+                        onPress={() => navigation.navigate('PendingTransactions')} 
+                    />
+                    {unsureQueueCount > 0 && (
+                        <Badge 
+                            style={{ position: 'absolute', top: 4, right: 4 }} 
+                            size={16}
+                        >
+                            {unsureQueueCount}
+                        </Badge>
+                    )}
+                </View>
+            </Appbar.Header>
+
             <FlatList
                 data={expenses}
                 keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                    <List.Item
-                        title={`${item.category}: ₹${item.amount}`}
-                        description={formatDate(item.date)}
-                        left={(props) => <List.Icon {...props} icon={item.isAutoCategorized ? 'robot' : 'hand-coin'} />}
-                        right={(props) => (
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                {(item.smsText || item.smsSender) && (
-                                    <IconButton
-                                        icon="message-text"
-                                        size={20}
-                                        onPress={() => setSelectedExpense(item)}
-                                    />
-                                )}
-                                <IconButton
-                                    icon="delete"
-                                    onPress={() => expenseService.deleteExpense(item.id)}
-                                />
-                            </View>
-                        )}
-                        onPress={() => {
-                            if (item.smsText || item.smsSender) {
-                                setSelectedExpense(item);
-                            }
-                        }}
-                        style={styles.listItem}
-                    />
-                )}
+                renderItem={renderItem}
                 ItemSeparatorComponent={() => <Divider />}
             />
 
@@ -194,6 +212,7 @@ const TransactionsScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#fff',
     },
     listItem: {
         paddingVertical: 4,
@@ -269,5 +288,3 @@ const styles = StyleSheet.create({
 });
 
 export default TransactionsScreen;
-
-

@@ -26,11 +26,21 @@ export const expenseService = {
 
     async addExpense(expense: Omit<Expense, 'id'>) {
         const db = dbService.getDb();
+        
+        // Deduplication check: if externalSmsId is provided, check if it already exists
+        if (expense.externalSmsId) {
+            const check = db.execute('SELECT id FROM expenses WHERE externalSmsId = ?', [expense.externalSmsId]);
+            if (check.rows?._array && check.rows._array.length > 0) {
+                console.log('[Expense Service] Duplicate expense detected (externalSmsId:', expense.externalSmsId, ') - skipping addition.');
+                return null;
+            }
+        }
+
         const id = uuidv4();
         const newExpense = { ...expense, id };
         db.execute(
-            'INSERT INTO expenses (id, amount, category, description, date, isAutoCategorized, smsSender, smsText) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, newExpense.amount, newExpense.category, newExpense.description, newExpense.date, newExpense.isAutoCategorized ? 1 : 0, newExpense.smsSender || '', newExpense.smsText || '']
+            'INSERT INTO expenses (id, amount, category, description, date, isAutoCategorized, smsSender, smsText, externalSmsId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, newExpense.amount, newExpense.category, newExpense.description, newExpense.date, newExpense.isAutoCategorized ? 1 : 0, newExpense.smsSender || '', newExpense.smsText || '', newExpense.externalSmsId || '']
         );
         useStore.getState().addExpense(newExpense);
 
@@ -59,8 +69,8 @@ export const expenseService = {
         if (!current) return;
         const updated = { ...current, ...updates };
         db.execute(
-            'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ?, isAutoCategorized = ?, smsSender = ?, smsText = ? WHERE id = ?',
-            [updated.amount, updated.category, updated.description, updated.date, updated.isAutoCategorized ? 1 : 0, updated.smsSender || '', updated.smsText || '', id]
+            'UPDATE expenses SET amount = ?, category = ?, description = ?, date = ?, isAutoCategorized = ?, smsSender = ?, smsText = ?, externalSmsId = ? WHERE id = ?',
+            [updated.amount, updated.category, updated.description, updated.date, updated.isAutoCategorized ? 1 : 0, updated.smsSender || '', updated.smsText || '', updated.externalSmsId || '', id]
         );
         useStore.getState().updateExpense(id, updates);
     },

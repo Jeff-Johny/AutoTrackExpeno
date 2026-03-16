@@ -19,7 +19,8 @@ class DatabaseService {
             date TEXT,
             isAutoCategorized INTEGER,
             smsSender TEXT,
-            smsText TEXT
+            smsText TEXT,
+            externalSmsId TEXT
           );
         `);
       console.log('DB: Expenses table checked');
@@ -32,6 +33,12 @@ class DatabaseService {
         // Column already exists, ignore
       }
 
+      try {
+        this.db.execute('ALTER TABLE expenses ADD COLUMN externalSmsId TEXT');
+        console.log('DB: externalSmsId column added (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
 
       // Create categories table (with max spend)
       this.db.execute(`
@@ -52,6 +59,16 @@ class DatabaseService {
           );
         `);
       console.log('DB: Patterns table checked');
+
+      // Create settings table for persistence
+      this.db.execute(`
+          CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+          );
+        `);
+      console.log('DB: Settings table checked');
+
 
       // Initialize default categories
       const categories = [
@@ -81,6 +98,30 @@ class DatabaseService {
         throw new Error('Database not initialized');
     }
     return this.db;
+  }
+
+  async getLastSyncTimestamp(): Promise<number | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute('SELECT value FROM settings WHERE key = ?', ['last_sync_timestamp']);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return parseInt(rows[0].value, 10);
+      }
+      return null;
+    } catch (error) {
+      console.error('DB: Failed to get last sync timestamp', error);
+      return null;
+    }
+  }
+
+  async setLastSyncTimestamp(timestamp: number) {
+    try {
+      const db = this.getDb();
+      db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['last_sync_timestamp', timestamp.toString()]);
+    } catch (error) {
+      console.error('DB: Failed to set last sync timestamp', error);
+    }
   }
 }
 
