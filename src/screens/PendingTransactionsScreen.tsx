@@ -13,6 +13,8 @@ import {
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 import { patternService } from '../services/patterns';
+import { dbService } from '../services/db';
+import { smsService } from '../services/sms';
 
 const PendingTransactionsScreen = ({ navigation }: any) => {
   const { unsureDataQueue, removeFromUnsureQueue, categories } = useStore();
@@ -37,16 +39,28 @@ const PendingTransactionsScreen = ({ navigation }: any) => {
     });
 
     // 2. Learn pattern
-    await patternService.addPattern(item.sender, 'category', category);
+    if (item.aiResult?.payee) {
+      await patternService.addPattern(item.aiResult.payee, 'category', category);
+    }
 
     // 3. Remove from queue
     removeFromUnsureQueue(index);
+
+    if (item.externalSmsId) {
+      await dbService.updateSmsTransactionStatus(item.externalSmsId, 'confirmed');
+      await smsService.fetchIgnoredSms();
+    }
     
     setMenuVisible(false);
     setSelectedItem(null);
   };
 
-  const handleIgnore = (index: number) => {
+  const handleIgnore = async (index: number) => {
+    const item = unsureDataQueue[index];
+    if (item && item.externalSmsId) {
+      await dbService.updateSmsTransactionStatus(item.externalSmsId, 'user_ignored');
+      await smsService.fetchIgnoredSms();
+    }
     removeFromUnsureQueue(index);
   };
 

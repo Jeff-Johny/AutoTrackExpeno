@@ -1,21 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, FlatList, StyleSheet, ScrollView } from 'react-native';
-import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Menu, Divider, Text, Title, Badge, Appbar } from 'react-native-paper';
+import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Menu, Divider, Text, Title, Badge, Appbar, SegmentedButtons } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
+import { patternService } from '../services/patterns';
+import { smsService } from '../services/sms';
 import { Expense } from '../utils/constants';
 
 const TransactionsScreen = ({ navigation }: any) => {
     const expenses = useStore((state) => state.expenses);
     const categories = useStore((state) => state.categories);
+    const patterns = useStore((state) => state.patterns);
+    const ignoredSms = useStore((state) => state.ignoredSms);
     const unsureQueueCount = useStore((state) => state.unsureDataQueue.length);
+    const setUnsureData = useStore((state: any) => state.setUnsureData);
+
+    useEffect(() => {
+        smsService.fetchIgnoredSms();
+    }, []);
+    
+    const [view, setView] = useState('transactions');
     const [addVisible, setAddVisible] = useState(false);
     const [amount, setAmount] = useState('');
     const [category, setCategory] = useState('');
     const [menuVisible, setMenuVisible] = useState(false);
 
-    // SMS source detail popup
+    // SMS source detail popup & Editing
     const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+    const [isEditingCategory, setIsEditingCategory] = useState(false);
+    const [editMenuVisible, setEditMenuVisible] = useState(false);
 
     const openMenu = () => setMenuVisible(true);
     const closeMenu = () => setMenuVisible(false);
@@ -44,7 +57,18 @@ const TransactionsScreen = ({ navigation }: any) => {
         }
     };
 
-    const renderItem = ({ item }: { item: Expense }) => (
+    const handleUpdateCategory = async (newCategory: string) => {
+        if (selectedExpense) {
+            await expenseService.updateExpense(selectedExpense.id, { category: newCategory });
+            setSelectedExpense({ ...selectedExpense, category: newCategory });
+            setEditMenuVisible(false);
+            setIsEditingCategory(false);
+        }
+    };
+
+    const ignoredPatterns = patterns.filter(p => p.action === 'ignore');
+
+    const renderTransactionItem = ({ item }: { item: Expense }) => (
         <List.Item
             title={`Rs ${item.amount}`}
             description={`${item.category} • ${formatDate(item.date)}`}
@@ -56,6 +80,7 @@ const TransactionsScreen = ({ navigation }: any) => {
             )}
             onPress={() => {
                 setSelectedExpense(item);
+                setIsEditingCategory(false);
             }}
             right={(props) => (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -70,10 +95,42 @@ const TransactionsScreen = ({ navigation }: any) => {
         />
     );
 
+    const renderPatternItem = ({ item }: { item: any }) => (
+      <List.Item
+          title={item.pattern}
+          description="Tap to unignore and categorize"
+          left={(props) => <List.Icon {...props} icon="eye-off-outline" />}
+          onPress={() => {
+            setUnsureData({
+              unignorePatternId: item.id,
+              smsText: '',
+              sender: '',
+              aiResult: {
+                amount: 0,
+                category: '',
+                description: `Unignored: ${item.pattern}`,
+                payee: item.pattern,
+                isSpending: true,
+                isCertain: false,
+              },
+            });
+          }}
+          right={() => (
+              <Button
+                mode="outlined"
+                onPress={() => patternService.deletePattern(item.id)}
+                compact
+              >
+                Remove
+              </Button>
+          )}
+      />
+    );
+
     return (
         <View style={styles.container}>
             <Appbar.Header>
-                <Appbar.Content title="Transactions" />
+                <Appbar.Content title="Activity" />
                 <View>
                     <Appbar.Action 
                         icon="bell-outline" 
@@ -90,21 +147,141 @@ const TransactionsScreen = ({ navigation }: any) => {
                 </View>
             </Appbar.Header>
 
-            <FlatList
-                data={expenses}
-                keyExtractor={(item) => item.id}
-                renderItem={renderItem}
-                ItemSeparatorComponent={() => <Divider />}
-            />
+            <View style={{ padding: 10 }}>
+              <SegmentedButtons
+                value={view}
+                onValueChange={setView}
+                buttons={[
+                  { value: 'transactions', label: 'Transactions' },
+                  { value: 'ignored', label: 'Ignored' },
+                ]}
+              />
+            </View>
+
+            {view === 'transactions' ? (
+              <FlatList
+                  data={expenses}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderTransactionItem}
+                  ItemSeparatorComponent={() => <Divider />}
+                  ListEmptyComponent={<Text style={styles.emptyText}>No transactions found.</Text>}
+              />
+            ) : (
+              <ScrollView style={{ flex: 1 }}>
+                <List.Subheader style={{ fontWeight: 'bold', color: '#6750A4' }}>Ignored Payee Rules</List.Subheader>
+                {ignoredPatterns.length > 0 ? (
+                  ignoredPatterns.map((item) => (
+                    <React.Fragment key={item.id}>
+                      <List.Item
+                        title={item.pattern}
+                        description="Future SMS from this payee will be ignored"
+                        left={(props) => <List.Icon {...props} icon="eye-off-outline" />}
+                        onPress={() => {
+                          setUnsureData({
+                            unignorePatternId: item.id,
+                            smsText: '',
+                            sender: '',
+                            aiResult: {
+                              amount: 0,
+                              category: '',
+                              description: `Unignored: ${item.pattern}`,
+                              payee: item.pattern,
+                              isSpending: true,
+                              isCertain: false,
+                            },
+                          });
+                        }}
+                        right={() => (
+                          <Button
+                            mode="outlined"
+                            onPress={() => patternService.deletePattern(item.id)}
+                            compact
+                            style={{ alignSelf: 'center', marginRight: 10 }}
+                          >
+                            Remove Rule
+                          </Button>
+                        )}
+                      />
+                      <Divider />
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <Text style={styles.emptySubText}>No ignored payee rules defined.</Text>
+                )}
+
+                <List.Subheader style={{ fontWeight: 'bold', color: '#6750A4', marginTop: 15 }}>Ignored Transactions (SMS)</List.Subheader>
+                {ignoredSms.length > 0 ? (
+                  ignoredSms.map((item) => (
+                    <React.Fragment key={item.id}>
+                      <List.Item
+                        title={item.amount > 0 ? `₹${item.amount} (${item.payee || item.sender})` : `${item.sender}`}
+                        description={`${item.smsText}\n${formatDate(item.date)}`}
+                        descriptionNumberOfLines={3}
+                        left={(props) => <List.Icon {...props} icon="message-text-outline" />}
+                        onPress={() => {
+                          setUnsureData({
+                            smsText: item.smsText,
+                            sender: item.sender,
+                            externalSmsId: item.id,
+                            date: item.date,
+                            aiResult: {
+                              amount: item.amount || 0,
+                              category: item.category || '',
+                              description: item.description || '',
+                              payee: item.payee || '',
+                              isSpending: true,
+                              isCertain: false,
+                            },
+                            isUnignoringSms: true
+                          });
+                        }}
+                        right={() => (
+                          <Button
+                            mode="outlined"
+                            onPress={() => {
+                              setUnsureData({
+                                smsText: item.smsText,
+                                sender: item.sender,
+                                externalSmsId: item.id,
+                                date: item.date,
+                                aiResult: {
+                                  amount: item.amount || 0,
+                                  category: item.category || '',
+                                  description: item.description || '',
+                                  payee: item.payee || '',
+                                  isSpending: true,
+                                  isCertain: false,
+                                },
+                                isUnignoringSms: true
+                              });
+                            }}
+                            compact
+                            style={{ alignSelf: 'center', marginRight: 10 }}
+                          >
+                            Categorize
+                          </Button>
+                        )}
+                      />
+                      <Divider />
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <Text style={styles.emptySubText}>No ignored messages found.</Text>
+                )}
+              </ScrollView>
+            )}
 
             {/* SMS Source Detail Popup */}
             <Portal>
                 <Modal
                     visible={!!selectedExpense}
-                    onDismiss={() => setSelectedExpense(null)}
+                    onDismiss={() => {
+                      setSelectedExpense(null);
+                      setEditMenuVisible(false);
+                    }}
                     contentContainerStyle={styles.modalContent}
                 >
-                    <Title style={styles.modalTitle}>Transaction Source</Title>
+                    <Title style={styles.modalTitle}>Transaction Details</Title>
 
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Amount</Text>
@@ -112,7 +289,30 @@ const TransactionsScreen = ({ navigation }: any) => {
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Category</Text>
-                        <Text style={styles.detailValue}>{selectedExpense?.category}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Text style={[styles.detailValue, { marginRight: 8 }]}>{selectedExpense?.category}</Text>
+                          <Menu
+                            visible={editMenuVisible}
+                            onDismiss={() => setEditMenuVisible(false)}
+                            anchor={
+                              <IconButton 
+                                icon="pencil-outline" 
+                                size={16} 
+                                onPress={() => setEditMenuVisible(true)} 
+                              />
+                            }
+                          >
+                            <ScrollView style={{ maxHeight: 200 }}>
+                              {categories.map((cat) => (
+                                <Menu.Item
+                                  key={cat.category}
+                                  onPress={() => handleUpdateCategory(cat.category)}
+                                  title={cat.category}
+                                />
+                              ))}
+                            </ScrollView>
+                          </Menu>
+                        </View>
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Date</Text>
@@ -176,16 +376,18 @@ const TransactionsScreen = ({ navigation }: any) => {
                                 </Button>
                             }
                         >
-                            {categories.map((cat) => (
-                                <Menu.Item
-                                    key={cat.category}
-                                    onPress={() => {
-                                        setCategory(cat.category);
-                                        closeMenu();
-                                    }}
-                                    title={cat.category}
-                                />
-                            ))}
+                            <ScrollView style={{ maxHeight: 200 }}>
+                              {categories.map((cat) => (
+                                  <Menu.Item
+                                      key={cat.category}
+                                      onPress={() => {
+                                          setCategory(cat.category);
+                                          closeMenu();
+                                      }}
+                                      title={cat.category}
+                                  />
+                              ))}
+                            </ScrollView>
                         </Menu>
                     </View>
 
@@ -217,6 +419,18 @@ const styles = StyleSheet.create({
     listItem: {
         paddingVertical: 4,
     },
+    emptyText: {
+      textAlign: 'center',
+      marginTop: 40,
+      color: '#888',
+    },
+    emptySubText: {
+      textAlign: 'center',
+      marginVertical: 15,
+      color: '#999',
+      fontSize: 13,
+      fontStyle: 'italic',
+    },
     modalContent: {
         padding: 20,
         backgroundColor: 'white',
@@ -230,7 +444,9 @@ const styles = StyleSheet.create({
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 8,
+        minHeight: 40,
     },
     detailLabel: {
         color: '#888',
@@ -239,7 +455,6 @@ const styles = StyleSheet.create({
     },
     detailValue: {
         fontWeight: '600',
-        flex: 2,
         textAlign: 'right',
     },
     smsBox: {

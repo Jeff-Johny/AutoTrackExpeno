@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
-import { List, Title, TextInput, Button, IconButton, Card, Portal, Dialog } from 'react-native-paper';
+import { List, Title, TextInput, Button, IconButton, Card, Appbar } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 
@@ -21,6 +21,11 @@ const CategoriesScreen = () => {
 
     return (
         <View style={styles.container}>
+            <Appbar.Header>
+                <Appbar.Content title="Categories" />
+            </Appbar.Header>
+
+            <View style={styles.inner}>
             <Card style={styles.inputCard}>
                 <Card.Content>
                     <Title>Add New Category</Title>
@@ -63,6 +68,7 @@ const CategoriesScreen = () => {
                 )}
                 contentContainerStyle={styles.listContainer}
             />
+            </View>
         </View>
     );
 };
@@ -70,8 +76,11 @@ const CategoriesScreen = () => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        padding: 16,
         backgroundColor: '#f5f5f5',
+    },
+    inner: {
+        flex: 1,
+        padding: 16,
     },
     inputCard: {
         marginBottom: 20,

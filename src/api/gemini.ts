@@ -41,6 +41,7 @@ Rules:
 Return ONLY a JSON object with these keys:
 - isSpending: boolean (true ONLY for confirmed completed debit transactions)
 - amount: number (the amount spent, 0 if isSpending is false)
+- payee: string (the merchant, business, or person receiving the payment. Extract this name from the SMS, e.g. "Amazon", "Uber", "Zomato", "Swiggy", or a person's name. Clean it up so it is just the name of the payee/merchant, not the full VPA or extra text. If not present or not clear, return null)
 - category: string (one of: ${DEFAULT_CATEGORIES.join(', ')})
 - description: string (a short description of the expense)
 - isCertain: boolean (true if you are very sure about the category, false if it's a guess)

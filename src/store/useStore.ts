@@ -8,6 +8,7 @@ interface AppState {
     autoTrackedSummary: any[] | null;
     unsureData: any | null;
     unsureDataQueue: any[];
+    ignoredSms: any[];
     setExpenses: (expenses: Expense[]) => void;
     addExpense: (expense: Expense) => void;
     updateExpense: (id: string, expense: Partial<Expense>) => void;
@@ -18,7 +19,11 @@ interface AppState {
     setPatterns: (patterns: LearnedPattern[]) => void;
     setAutoTrackedSummary: (summary: any[] | null) => void;
     setUnsureData: (data: any | null) => void;
+    setUnsureDataQueue: (queue: any[]) => void;
     removeFromUnsureQueue: (index: number) => void;
+    setIgnoredSms: (ignoredSms: any[]) => void;
+    syncStatus: 'idle' | 'syncing' | 'completed';
+    setSyncStatus: (status: 'idle' | 'syncing' | 'completed') => void;
 }
 export const useStore = create<AppState>((set) => ({
     expenses: [],
@@ -27,6 +32,7 @@ export const useStore = create<AppState>((set) => ({
     autoTrackedSummary: null,
     unsureData: null,
     unsureDataQueue: [],
+    ignoredSms: [],
     setExpenses: (expenses) => set({ expenses }),
     addExpense: (expense) => set((state) => ({ expenses: [expense, ...state.expenses] })),
     updateExpense: (id, updatedExpense) =>
@@ -69,9 +75,24 @@ export const useStore = create<AppState>((set) => ({
             }
         }
     }),
+    setUnsureDataQueue: (queue) => set((state) => {
+        if (queue.length > 0 && !state.unsureData) {
+            return {
+                unsureData: queue[0],
+                unsureDataQueue: queue.slice(1)
+            };
+        }
+        return { unsureDataQueue: queue };
+    }),
     removeFromUnsureQueue: (index) => set((state) => {
         const newQueue = [...state.unsureDataQueue];
         newQueue.splice(index, 1);
         return { unsureDataQueue: newQueue };
     }),
+    setIgnoredSms: (ignoredSms) => set({ ignoredSms }),
+    deletePattern: (id: string) => set((state) => ({
+        patterns: state.patterns.filter((p) => p.id !== id),
+    })),
+    syncStatus: 'idle',
+    setSyncStatus: (status) => set({ syncStatus: status }),
 }));

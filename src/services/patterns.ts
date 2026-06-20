@@ -22,14 +22,16 @@ export const patternService = {
         await this.fetchAll();
     },
 
+    async deletePattern(id: string) {
+        const db = dbService.getDb();
+        db.execute('DELETE FROM learned_patterns WHERE id = ?', [id]);
+        useStore.getState().deletePattern(id);
+    },
+
     async checkPattern(smsText: string, sender: string) {
         const patterns = useStore.getState().patterns;
-        // Check for exact sender match first
-        let match = patterns.find(p => p.pattern === sender);
-        if (match) return match;
-
-        // Check for keyword matches in text
-        match = patterns.find(p => smsText.toLowerCase().includes(p.pattern.toLowerCase()));
+        // Check for keyword (payee/merchant) matches in text (excluding empty pattern strings)
+        const match = patterns.find(p => p.pattern && smsText.toLowerCase().includes(p.pattern.toLowerCase()));
         return match;
     }
 };

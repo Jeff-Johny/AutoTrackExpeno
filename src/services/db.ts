@@ -69,6 +69,23 @@ class DatabaseService {
         `);
       console.log('DB: Settings table checked');
 
+      // Create sms_transactions table for tracking all incoming & synced messages
+      this.db.execute(`
+          CREATE TABLE IF NOT EXISTS sms_transactions (
+            sms_id TEXT PRIMARY KEY,
+            sender TEXT,
+            sms_text TEXT,
+            date INTEGER,
+            amount REAL,
+            payee TEXT,
+            category TEXT,
+            description TEXT,
+            is_spending INTEGER,
+            status TEXT
+          );
+        `);
+      console.log('DB: sms_transactions table checked');
+
 
       // Initialize default categories
       const categories = [
@@ -121,6 +138,86 @@ class DatabaseService {
       db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['last_sync_timestamp', timestamp.toString()]);
     } catch (error) {
       console.error('DB: Failed to set last sync timestamp', error);
+    }
+  }
+
+  async saveSmsTransaction(tx: {
+    smsId: string;
+    sender: string;
+    smsText: string;
+    date: number;
+    amount: number;
+    payee: string | null;
+    category: string | null;
+    description: string | null;
+    isSpending: boolean;
+    status: 'pending' | 'confirmed' | 'user_ignored' | 'system_ignored';
+  }) {
+    try {
+      const db = this.getDb();
+      db.execute(
+        'INSERT OR REPLACE INTO sms_transactions (sms_id, sender, sms_text, date, amount, payee, category, description, is_spending, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          tx.smsId,
+          tx.sender,
+          tx.smsText,
+          tx.date,
+          tx.amount,
+          tx.payee || '',
+          tx.category || '',
+          tx.description || '',
+          tx.isSpending ? 1 : 0,
+          tx.status,
+        ]
+      );
+    } catch (e) {
+      console.error('DB: Failed to save SMS transaction', e);
+    }
+  }
+
+  async updateSmsTransactionStatus(smsId: string, status: 'confirmed' | 'user_ignored' | 'system_ignored') {
+    try {
+      const db = this.getDb();
+      db.execute('UPDATE sms_transactions SET status = ? WHERE sms_id = ?', [status, smsId]);
+    } catch (e) {
+      console.error('DB: Failed to update SMS transaction status', e);
+    }
+  }
+
+  async getPendingSmsTransactions(): Promise<any[]> {
+    try {
+      const db = this.getDb();
+      const result = db.execute("SELECT * FROM sms_transactions WHERE status = 'pending' ORDER BY date DESC");
+      return result.rows?._array || [];
+    } catch (e) {
+      console.error('DB: Failed to get pending SMS transactions', e);
+      return [];
+    }
+  }
+
+  async getIgnoredSmsTransactions(): Promise<any[]> {
+    try {
+      const db = this.getDb();
+      const result = db.execute("SELECT * FROM sms_transactions WHERE status IN ('user_ignored', 'system_ignored') ORDER BY date DESC");
+      return result.rows?._array || [];
+    } catch (e) {
+      console.error('DB: Failed to get ignored SMS transactions', e);
+      return [];
+    }
+  }
+
+  async getSmsTransaction(smsId: string): Promise<any | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute("SELECT * FROM sms_transactions WHERE sms_id = ?", [smsId]);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return rows[0];
+      }
+      return null;
+    } catch (e) {
+      console.error('DB: Failed to get SMS transaction', e);
+      return null;
     }
   }
 }
