@@ -21,6 +21,7 @@ interface AppState {
     setUnsureData: (data: any | null) => void;
     setUnsureDataQueue: (queue: any[]) => void;
     removeFromUnsureQueue: (index: number) => void;
+    addToUnsureQueue: (data: any) => void;
     setIgnoredSms: (ignoredSms: any[]) => void;
     syncStatus: 'idle' | 'syncing' | 'completed';
     setSyncStatus: (status: 'idle' | 'syncing' | 'completed') => void;
@@ -88,6 +89,13 @@ export const useStore = create<AppState>((set) => ({
         const newQueue = [...state.unsureDataQueue];
         newQueue.splice(index, 1);
         return { unsureDataQueue: newQueue };
+    }),
+    addToUnsureQueue: (data) => set((state) => {
+        if (!state.unsureData) {
+            return { unsureData: data, unsureDataQueue: state.unsureDataQueue };
+        } else {
+            return { unsureDataQueue: [...state.unsureDataQueue, data] };
+        }
     }),
     setIgnoredSms: (ignoredSms) => set({ ignoredSms }),
     deletePattern: (id: string) => set((state) => ({

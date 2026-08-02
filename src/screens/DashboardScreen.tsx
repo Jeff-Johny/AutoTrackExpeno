@@ -16,20 +16,62 @@ const DashboardScreen = ({ navigation }: any) => {
     const [selectedDate, setSelectedDate] = useState<string>(
         new Date().toISOString().split('T')[0]
     );
+    const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
 
     useEffect(() => {
         expenseService.fetchAll();
         expenseService.fetchCategories();
     }, []);
 
-    const totalSpend = expenses.reduce((sum, e) => sum + e.amount, 0);
+    // Calculate monthly spend for selected month
+    const selectedMonthNum = selectedMonth.getMonth();
+    const selectedYear = selectedMonth.getFullYear();
 
-    // Calculate highlighted dates based on expenses
+    const monthlySpend = expenses.reduce((sum, e) => {
+        if (!e.date) return sum;
+        const expenseDate = new Date(e.date);
+        if (expenseDate.getMonth() === selectedMonthNum && expenseDate.getFullYear() === selectedYear) {
+            return sum + e.amount;
+        }
+        return sum;
+    }, 0);
+
+    const monthName = selectedMonth.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    // Format date as YYYY-MM-DD without timezone conversion
+    const formatDateLocal = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    const calendarCurrentDate = formatDateLocal(new Date(selectedYear, selectedMonthNum, 1));
+
+    const handlePrevMonth = () => {
+        const newMonth = new Date(selectedMonth);
+        newMonth.setMonth(newMonth.getMonth() - 1);
+        setSelectedMonth(newMonth);
+        const firstDay = new Date(newMonth.getFullYear(), newMonth.getMonth(), 1);
+        setSelectedDate(formatDateLocal(firstDay));
+    };
+
+    const handleNextMonth = () => {
+        const newMonth = new Date(selectedMonth);
+        newMonth.setMonth(newMonth.getMonth() + 1);
+        setSelectedMonth(newMonth);
+        const firstDay = new Date(newMonth.getFullYear(), newMonth.getMonth(), 1);
+        setSelectedDate(formatDateLocal(firstDay));
+    };
+
+    // Calculate highlighted dates based on expenses in the selected month
     const markedDates = expenses.reduce((acc: any, expense) => {
         if (!expense.date) return acc;
-        // The date might be an ISO string like "2023-10-17T09:30:00Z"
-        const dateKey = expense.date.split('T')[0];
-        acc[dateKey] = { marked: true, dotColor: '#d32f2f' }; // Red dot
+        const expenseDate = new Date(expense.date);
+        if (expenseDate.getMonth() === selectedMonthNum && expenseDate.getFullYear() === selectedYear) {
+            const dateKey = expense.date.split('T')[0];
+            acc[dateKey] = { marked: true, dotColor: '#d32f2f' }; // Red dot
+        }
         return acc;
     }, {});
 
@@ -49,7 +91,12 @@ const DashboardScreen = ({ navigation }: any) => {
 
     const chartData = categories.map((cat, index) => {
         const amount = expenses
-            .filter((e) => e.category === cat.category)
+            .filter((e) => {
+                if (e.category !== cat.category) return false;
+                if (!e.date) return false;
+                const expenseDate = new Date(e.date);
+                return expenseDate.getMonth() === selectedMonthNum && expenseDate.getFullYear() === selectedYear;
+            })
             .reduce((sum, e) => sum + e.amount, 0);
 
         return {
@@ -83,24 +130,35 @@ const DashboardScreen = ({ navigation }: any) => {
 
             <ScrollView>
                 <View style={{ padding: 16 }}>
-                    <Card style={{ marginBottom: 20 }}>
-                        <Card.Content style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                            <View>
-                                <Title>Lifetime Spend</Title>
-                                <Paragraph style={{ fontSize: 24, fontWeight: 'bold' }}>₹{totalSpend.toFixed(2)}</Paragraph>
-                            </View>
-                        </Card.Content>
-                    </Card>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                        <TouchableOpacity onPress={handlePrevMonth}>
+                            <Text style={{ fontSize: 18, color: '#6750A4' }}>← Prev</Text>
+                        </TouchableOpacity>
+                        <Card style={{ flex: 1, marginHorizontal: 12 }}>
+                            <Card.Content style={{ alignItems: 'center' }}>
+                                <Title>{monthName}</Title>
+                                <Paragraph style={{ fontSize: 28, fontWeight: 'bold' }}>₹{monthlySpend.toFixed(2)}</Paragraph>
+                            </Card.Content>
+                        </Card>
+                        <TouchableOpacity onPress={handleNextMonth}>
+                            <Text style={{ fontSize: 18, color: '#6750A4' }}>Next →</Text>
+                        </TouchableOpacity>
+                    </View>
 
                     <Card style={{ marginBottom: 20, overflow: 'hidden' }}>
                         <Calendar
-                            current={selectedDate}
+                            key={`calendar-${selectedYear}-${selectedMonthNum}`}
+                            current={calendarCurrentDate}
                             onDayPress={(day: any) => setSelectedDate(day.dateString)}
                             markedDates={markedDates}
+                            enableSwipeMonths={false}
+                            hideArrows={true}
                             theme={{
                                 selectedDayBackgroundColor: '#6750A4',
                                 todayTextColor: '#6750A4',
-                                arrowColor: '#6750A4',
+                                arrowColor: 'transparent',
+                                monthTextColor: 'transparent',
+                                textSectionTitleColor: 'transparent',
                                 dotColor: '#d32f2f',
                                 selectedDotColor: '#ffffff'
                             }}

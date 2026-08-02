@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Provider as PaperProvider, Portal, Modal, Button, Text, Title, TextInput, ProgressBar, Snackbar } from 'react-native-paper';
-import { View, Dimensions } from 'react-native';
+import { View, Dimensions, LogBox } from 'react-native';
+
+// Suppress React 19 strict Fragment prop warning from react-native-screens internals.
+// This is a known incompatibility (react-native-screens <= 4.19) and does NOT affect functionality.
+LogBox.ignoreLogs([
+  "Invalid prop `index` supplied to `React.Fragment`",
+  "Invalid prop `%s` supplied to `React.Fragment`",
+]);
 import MainNavigator from './src/navigation/MainNavigator';
 import { theme } from './src/theme/theme';
 import { dbService } from './src/services/db';
@@ -11,6 +18,43 @@ import { DEFAULT_CATEGORIES } from './src/utils/constants';
 import LoginScreen from './src/screens/LoginScreen';
 import { notificationService } from './src/services/notifications';
 import { useStore } from './src/store/useStore';
+import { emailService } from './src/services/email';
+
+const formatFriendlyDate = (dateValue: string | number) => {
+  if (!dateValue) return 'Date Unknown';
+  
+  let parsed = dateValue;
+  if (typeof dateValue === 'string' && /^\d+$/.test(dateValue)) {
+    parsed = parseInt(dateValue, 10);
+  }
+  
+  const date = new Date(parsed);
+  if (isNaN(date.getTime())) return 'Date Unknown';
+
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const isToday = date.getDate() === today.getDate() &&
+                  date.getMonth() === today.getMonth() &&
+                  date.getFullYear() === today.getFullYear();
+                  
+  const isYesterday = date.getDate() === yesterday.getDate() &&
+                      date.getMonth() === yesterday.getMonth() &&
+                      date.getFullYear() === yesterday.getFullYear();
+
+  try {
+    if (isToday) {
+      return `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (isYesterday) {
+      return `Yesterday, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return date.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return 'Date Unknown';
+  }
+};
 
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(true);
@@ -140,6 +184,9 @@ const App = () => {
         console.warn('[App] SMS permissions NOT granted - listener will not work');
       }
 
+      console.log('[App] Initializing Email Sync...');
+      await emailService.initializeEmailSync();
+
       console.log('[App] App setup complete, setting isInitialized to true');
       setIsInitialized(true);
     };
@@ -258,8 +305,8 @@ const App = () => {
             <Text style={{ marginBottom: 10 }}>{unsureData.smsText}</Text>
           ) : null}
           {!unsureData?.reviewExpenseId && (
-            <Text style={{ color: 'gray', marginBottom: 5 }}>
-              {unsureData?.date ? new Date(unsureData.date).toLocaleString() : 'Date Unknown'}
+            <Text style={{ color: '#333', marginBottom: 10, fontWeight: 'bold', fontSize: 16 }}>
+              {formatFriendlyDate(unsureData?.date)}
             </Text>
           )}
           <TextInput

@@ -81,10 +81,27 @@ class DatabaseService {
             category TEXT,
             description TEXT,
             is_spending INTEGER,
-            status TEXT
+            status TEXT,
+            source TEXT,
+            transaction_hash TEXT
           );
         `);
       console.log('DB: sms_transactions table checked');
+
+      // Migration: add source and transaction_hash columns if they don't exist
+      try {
+        this.db.execute('ALTER TABLE sms_transactions ADD COLUMN source TEXT DEFAULT "sms"');
+        console.log('DB: source column added to sms_transactions (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
+
+      try {
+        this.db.execute('ALTER TABLE sms_transactions ADD COLUMN transaction_hash TEXT');
+        console.log('DB: transaction_hash column added to sms_transactions (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
 
 
       // Initialize default categories
@@ -152,11 +169,16 @@ class DatabaseService {
     description: string | null;
     isSpending: boolean;
     status: 'pending' | 'confirmed' | 'user_ignored' | 'system_ignored';
+    source?: 'sms' | 'email';
+    transactionHash?: string;
   }) {
     try {
       const db = this.getDb();
+      const source = tx.source || 'sms';
+      const transactionHash = tx.transactionHash || `${source}_${tx.date}_${tx.amount}`;
+
       db.execute(
-        'INSERT OR REPLACE INTO sms_transactions (sms_id, sender, sms_text, date, amount, payee, category, description, is_spending, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO sms_transactions (sms_id, sender, sms_text, date, amount, payee, category, description, is_spending, status, source, transaction_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           tx.smsId,
           tx.sender,
@@ -168,6 +190,8 @@ class DatabaseService {
           tx.description || '',
           tx.isSpending ? 1 : 0,
           tx.status,
+          source,
+          transactionHash,
         ]
       );
     } catch (e) {
@@ -217,6 +241,21 @@ class DatabaseService {
       return null;
     } catch (e) {
       console.error('DB: Failed to get SMS transaction', e);
+      return null;
+    }
+  }
+
+  async getTransactionByHash(transactionHash: string): Promise<any | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute("SELECT * FROM sms_transactions WHERE transaction_hash = ?", [transactionHash]);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return rows[0];
+      }
+      return null;
+    } catch (e) {
+      console.error('DB: Failed to get transaction by hash', e);
       return null;
     }
   }

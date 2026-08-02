@@ -58,6 +58,10 @@ const PendingTransactionsScreen = ({ navigation }: any) => {
   const handleIgnore = async (index: number) => {
     const item = unsureDataQueue[index];
     if (item && item.externalSmsId) {
+      // Create an ignore rule for the payee
+      if (item.aiResult?.payee) {
+        await patternService.addPattern(item.aiResult.payee, 'ignore');
+      }
       await dbService.updateSmsTransactionStatus(item.externalSmsId, 'user_ignored');
       await smsService.fetchIgnoredSms();
     }

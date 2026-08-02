@@ -28,9 +28,20 @@ export const patternService = {
         useStore.getState().deletePattern(id);
     },
 
-    async checkPattern(smsText: string, sender: string) {
+    async checkPattern(smsText: string, sender: string, payee?: string) {
         const patterns = useStore.getState().patterns;
-        // Check for keyword (payee/merchant) matches in text (excluding empty pattern strings)
+
+        // Priority 1: Check if payee is in ignored payee rules
+        if (payee) {
+            const payeeMatch = patterns.find(p =>
+                p.action === 'ignore' &&
+                p.pattern &&
+                p.pattern.toLowerCase() === payee.toLowerCase()
+            );
+            if (payeeMatch) return payeeMatch;
+        }
+
+        // Priority 2: Check for keyword (payee/merchant) matches in text (excluding empty pattern strings)
         const match = patterns.find(p => p.pattern && smsText.toLowerCase().includes(p.pattern.toLowerCase()));
         return match;
     }

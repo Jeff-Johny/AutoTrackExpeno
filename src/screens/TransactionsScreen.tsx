@@ -283,22 +283,33 @@ const TransactionsScreen = ({ navigation }: any) => {
                 >
                     <Title style={styles.modalTitle}>Transaction Details</Title>
 
-                    <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Amount</Text>
-                        <Text style={styles.detailValue}>₹{selectedExpense?.amount}</Text>
+                    {/* Highlighted Amount Section */}
+                    <View style={styles.highlightedSection}>
+                        <Text style={styles.highlightLabel}>Amount Spent</Text>
+                        <Text style={styles.highlightedAmount}>₹{selectedExpense?.amount}</Text>
                     </View>
+
+                    {/* Highlighted Date & Time Section */}
+                    <View style={styles.highlightedDateSection}>
+                        <View style={styles.dateTimeHeader}>
+                            <Text style={styles.dateIcon}>📅</Text>
+                            <Text style={styles.dateLabel}>Date & Time</Text>
+                        </View>
+                        <Text style={styles.dateValue}>{selectedExpense ? formatDate(selectedExpense.date) : ''}</Text>
+                    </View>
+
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Category</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Text style={[styles.detailValue, { marginRight: 8 }]}>{selectedExpense?.category}</Text>
+                        <View style={styles.categoryRow}>
+                          <Text style={styles.categoryValue}>{selectedExpense?.category}</Text>
                           <Menu
                             visible={editMenuVisible}
                             onDismiss={() => setEditMenuVisible(false)}
                             anchor={
-                              <IconButton 
-                                icon="pencil-outline" 
-                                size={16} 
-                                onPress={() => setEditMenuVisible(true)} 
+                              <IconButton
+                                icon="pencil-outline"
+                                size={16}
+                                onPress={() => setEditMenuVisible(true)}
                               />
                             }
                           >
@@ -315,11 +326,7 @@ const TransactionsScreen = ({ navigation }: any) => {
                         </View>
                     </View>
                     <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Date</Text>
-                        <Text style={styles.detailValue}>{selectedExpense ? formatDate(selectedExpense.date) : ''}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Sender</Text>
+                        <Text style={styles.detailLabel}>From</Text>
                         <Text style={styles.detailValue}>{selectedExpense?.smsSender || '(manual entry)'}</Text>
                     </View>
 
@@ -438,14 +445,73 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     modalTitle: {
-        marginBottom: 16,
+        marginBottom: 20,
         fontSize: 18,
+        fontWeight: 'bold',
+    },
+    highlightedSection: {
+        backgroundColor: '#F3E5F5',
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#6750A4',
+    },
+    highlightLabel: {
+        color: '#888',
+        fontSize: 12,
+        marginBottom: 8,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+    },
+    highlightedAmount: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: '#6750A4',
+    },
+    highlightedDateSection: {
+        backgroundColor: '#E8F5E9',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: '#2E7D32',
+    },
+    dateTimeHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    dateIcon: {
+        fontSize: 16,
+        marginRight: 8,
+    },
+    dateLabel: {
+        color: '#666',
+        fontSize: 12,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+    },
+    dateValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#1B5E20',
+        marginLeft: 24,
+    },
+    categoryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    categoryValue: {
+        fontWeight: '600',
+        textAlign: 'right',
+        marginRight: 8,
     },
     detailRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 12,
         minHeight: 40,
     },
     detailLabel: {

@@ -161,28 +161,31 @@ export const smsService = {
                             continue;
                         }
 
-                        // 2. Check learned patterns
-                        const pattern = await patternService.checkPattern(body, address);
+                        // 2. Pre-run AI to get payee first, then check patterns
+                        const aiResult = await geminiService.categorizeSms(body);
+                        const payee = aiResult?.payee;
+
+                        // Check learned patterns (payee takes priority)
+                        const pattern = await patternService.checkPattern(body, address, payee);
                         if (pattern) {
                             if (pattern.action === 'ignore') {
-                                console.log('[SMS Service] Sync: Pattern IGNORE match for', address);
+                                console.log('[SMS Service] Sync: Pattern IGNORE match for payee', payee);
                                 await dbService.saveSmsTransaction({
                                     smsId,
                                     sender: address,
                                     smsText: body,
                                     date,
                                     amount: 0,
-                                    payee: pattern.pattern,
+                                    payee: payee || pattern.pattern,
                                     category: null,
-                                    description: `Ignored by pattern: ${pattern.pattern}`,
+                                    description: `Ignored by payee rule: ${payee || pattern.pattern}`,
                                     isSpending: false,
                                     status: 'system_ignored'
                                 });
                                 continue;
                             }
-                            
+
                             console.log('[SMS Service] Sync: Pattern category match for', address);
-                            const aiResult = await geminiService.categorizeSms(body);
                             if (aiResult && aiResult.isSpending) {
                                 await dbService.saveSmsTransaction({
                                     smsId,
@@ -190,7 +193,7 @@ export const smsService = {
                                     smsText: body,
                                     date,
                                     amount: aiResult.amount,
-                                    payee: aiResult.payee || pattern.pattern,
+                                    payee: payee || pattern.pattern,
                                     category: pattern.category || aiResult.category,
                                     description: aiResult.description || `Pattern-matched: ${pattern.pattern}`,
                                     isSpending: true,
@@ -212,7 +215,7 @@ export const smsService = {
                                     smsText: body,
                                     date,
                                     amount: 0,
-                                    payee: pattern.pattern,
+                                    payee: payee || pattern.pattern,
                                     category: null,
                                     description: `Pattern matched category but AI says not spending`,
                                     isSpending: false,
@@ -241,28 +244,28 @@ export const smsService = {
                             continue;
                         }
 
-                        // 4. Run AI
+                        // 4. Run AI (if not already run via pattern check)
                         console.log('[SMS Service] Sync: Calling AI for', address);
-                        const aiResult = await geminiService.categorizeSms(body);
+                        const finalAiResult = await geminiService.categorizeSms(body);
 
-                        if (aiResult && aiResult.isSpending) {
+                        if (finalAiResult && finalAiResult.isSpending) {
                             console.log('[SMS Service] Sync: AI identified spending!');
                             await dbService.saveSmsTransaction({
                                 smsId,
                                 sender: address,
                                 smsText: body,
                                 date,
-                                amount: aiResult.amount,
-                                payee: aiResult.payee,
-                                category: aiResult.category,
-                                description: aiResult.description,
+                                amount: finalAiResult.amount,
+                                payee: finalAiResult.payee,
+                                category: finalAiResult.category,
+                                description: finalAiResult.description,
                                 isSpending: true,
                                 status: 'pending'
                             });
                             onUnsure({
                                 smsText: body,
                                 sender: address,
-                                aiResult,
+                                aiResult: finalAiResult,
                                 isSync: true,
                                 externalSmsId: smsId,
                                 date: date
@@ -274,10 +277,10 @@ export const smsService = {
                                 sender: address,
                                 smsText: body,
                                 date,
-                                amount: aiResult ? aiResult.amount : 0,
-                                payee: aiResult ? aiResult.payee : null,
-                                category: aiResult ? aiResult.category : null,
-                                description: aiResult ? aiResult.description : 'AI determined not spending',
+                                amount: finalAiResult ? finalAiResult.amount : 0,
+                                payee: finalAiResult ? finalAiResult.payee : null,
+                                category: finalAiResult ? finalAiResult.category : null,
+                                description: finalAiResult ? finalAiResult.description : 'AI determined not spending',
                                 isSpending: false,
                                 status: 'system_ignored'
                             });
@@ -346,23 +349,26 @@ export const smsService = {
                         return;
                     }
 
-                    // 2. Check learned patterns
+                    // 2. Pre-run AI to get payee first, then check patterns
                     console.log('[SMS Service] Step 1: Checking learned patterns...');
-                    const pattern = await patternService.checkPattern(body, originatingAddress);
+                    const aiResult = await geminiService.categorizeSms(body);
+                    const payee = aiResult?.payee;
+
+                    const pattern = await patternService.checkPattern(body, originatingAddress, payee);
                     console.log('[SMS Service] Pattern Match Result:', pattern);
 
                     if (pattern) {
                         if (pattern.action === 'ignore') {
-                            console.log('[SMS Service] ❌ Pattern action is IGNORE - saving to DB');
+                            console.log('[SMS Service] ❌ Pattern action is IGNORE for payee', payee);
                             await dbService.saveSmsTransaction({
                                 smsId,
                                 sender: originatingAddress,
                                 smsText: body,
                                 date,
                                 amount: 0,
-                                payee: pattern.pattern,
+                                payee: payee || pattern.pattern,
                                 category: null,
-                                description: `Ignored by pattern: ${pattern.pattern}`,
+                                description: `Ignored by payee rule: ${payee || pattern.pattern}`,
                                 isSpending: false,
                                 status: 'system_ignored'
                             });
@@ -371,7 +377,6 @@ export const smsService = {
                         }
 
                         console.log('[SMS Service] ✅ Pattern found! Category:', pattern.category);
-                        const aiResult = await geminiService.categorizeSms(body);
                         if (aiResult && aiResult.isSpending) {
                             await dbService.saveSmsTransaction({
                                 smsId,
@@ -379,7 +384,7 @@ export const smsService = {
                                 smsText: body,
                                 date,
                                 amount: aiResult.amount,
-                                payee: aiResult.payee || pattern.pattern,
+                                payee: payee || pattern.pattern,
                                 category: pattern.category || aiResult.category,
                                 description: aiResult.description || `Pattern-matched: ${pattern.pattern}`,
                                 isSpending: true,
@@ -405,7 +410,7 @@ export const smsService = {
                                 smsText: body,
                                 date,
                                 amount: 0,
-                                payee: pattern.pattern,
+                                payee: payee || pattern.pattern,
                                 category: null,
                                 description: `Pattern matched category but AI says not spending`,
                                 isSpending: false,
@@ -436,35 +441,35 @@ export const smsService = {
                         return;
                     }
 
-                    // 4. Run AI
+                    // 4. Run AI (if not already run via pattern check)
                     console.log('[SMS Service] No pattern found - calling Gemini AI directly...');
-                    const aiResult = await geminiService.categorizeSms(body);
-                    console.log('[SMS Service] AI Result:', JSON.stringify(aiResult, null, 2));
+                    const finalAiResult = await geminiService.categorizeSms(body);
+                    console.log('[SMS Service] AI Result:', JSON.stringify(finalAiResult, null, 2));
 
-                    if (aiResult && aiResult.isSpending) {
+                    if (finalAiResult && finalAiResult.isSpending) {
                         await dbService.saveSmsTransaction({
                             smsId,
                             sender: originatingAddress,
                             smsText: body,
                             date,
-                            amount: aiResult.amount,
-                            payee: aiResult.payee,
-                            category: aiResult.category,
-                            description: aiResult.description,
+                            amount: finalAiResult.amount,
+                            payee: finalAiResult.payee,
+                            category: finalAiResult.category,
+                            description: finalAiResult.description,
                             isSpending: true,
                             status: 'pending'
                         });
                         onUnsure({
                             smsText: body,
                             sender: originatingAddress,
-                            aiResult,
+                            aiResult: finalAiResult,
                             externalSmsId: smsId,
                             date: date
                         });
                         notificationService.notify(
                             "Expense Detected",
-                            `Detected Rs ${aiResult.amount} spending from ${originatingAddress}. Tap to confirm.`,
-                            { smsText: body, sender: originatingAddress, aiResult, externalSmsId: smsId }
+                            `Detected Rs ${finalAiResult.amount} spending from ${originatingAddress}. Tap to confirm.`,
+                            { smsText: body, sender: originatingAddress, aiResult: finalAiResult, externalSmsId: smsId }
                         );
                     } else {
                         await dbService.saveSmsTransaction({
@@ -472,10 +477,10 @@ export const smsService = {
                             sender: originatingAddress,
                             smsText: body,
                             date,
-                            amount: aiResult ? aiResult.amount : 0,
-                            payee: aiResult ? aiResult.payee : null,
-                            category: aiResult ? aiResult.category : null,
-                            description: aiResult ? aiResult.description : 'AI determined not spending',
+                            amount: finalAiResult ? finalAiResult.amount : 0,
+                            payee: finalAiResult ? finalAiResult.payee : null,
+                            category: finalAiResult ? finalAiResult.category : null,
+                            description: finalAiResult ? finalAiResult.description : 'AI determined not spending',
                             isSpending: false,
                             status: 'system_ignored'
                         });
