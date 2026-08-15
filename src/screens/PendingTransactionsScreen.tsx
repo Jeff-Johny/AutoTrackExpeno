@@ -16,6 +16,7 @@ import { dbService } from '../services/db';
 import { smsService } from '../services/sms';
 import { useAppTheme } from '../theme/theme';
 import { getCategoryColor } from '../utils/categoryColors';
+import { formatSignedAmount } from '../utils/format';
 
 const PendingTransactionsScreen = ({ navigation }: any) => {
   const theme = useAppTheme();
@@ -74,16 +75,24 @@ const PendingTransactionsScreen = ({ navigation }: any) => {
     const catColor = item.aiResult?.category
       ? getCategoryColor(item.aiResult.category, theme.custom.categoryColors)
       : theme.colors.outline;
+    const isCredit = item.aiResult.amount < 0;
     return (
       <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
         <View style={styles.cardHeader}>
-          <View style={[styles.catChip, { backgroundColor: catColor + '22' }]}>
-            <Text style={{ color: catColor, fontSize: 11, fontWeight: '700' }}>
-              {item.aiResult?.category || 'Uncategorized'}
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={[styles.catChip, { backgroundColor: catColor + '22' }]}>
+              <Text style={{ color: catColor, fontSize: 11, fontWeight: '700' }}>
+                {item.aiResult?.category || 'Uncategorized'}
+              </Text>
+            </View>
+            {isCredit && (
+              <View style={[styles.catChip, { backgroundColor: theme.custom.goodTint }]}>
+                <Text style={{ color: theme.custom.good, fontSize: 11, fontWeight: '700' }}>Refund</Text>
+              </View>
+            )}
           </View>
-          <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 16, fontWeight: '700', color: theme.colors.onSurface }}>
-            ₹{item.aiResult.amount}
+          <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 16, fontWeight: '700', color: isCredit ? theme.custom.good : theme.colors.onSurface }}>
+            {formatSignedAmount(item.aiResult.amount)}
           </Text>
         </View>
         <Text

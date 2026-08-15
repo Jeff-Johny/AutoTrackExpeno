@@ -7,6 +7,7 @@ import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 import { useAppTheme } from '../theme/theme';
 import { getCategoryColor } from '../utils/categoryColors';
+import { formatSignedAmount } from '../utils/format';
 
 const DashboardScreen = ({ navigation }: any) => {
     const theme = useAppTheme();
@@ -169,8 +170,8 @@ const DashboardScreen = ({ navigation }: any) => {
                         <Card style={{ flex: 1, marginHorizontal: 12 }}>
                             <Card.Content style={{ alignItems: 'center' }}>
                                 <Title style={{ color: theme.colors.onSurfaceVariant }}>{monthName}</Title>
-                                <Paragraph style={{ fontSize: 28, fontWeight: 'bold', fontFamily: theme.custom.ledgerFont, color: theme.colors.onSurface }}>
-                                    ₹{monthlySpend.toFixed(2)}
+                                <Paragraph style={{ fontSize: 28, fontWeight: 'bold', fontFamily: theme.custom.ledgerFont, color: monthlySpend < 0 ? theme.custom.good : theme.colors.onSurface }}>
+                                    {formatSignedAmount(monthlySpend)}
                                 </Paragraph>
                             </Card.Content>
                         </Card>
@@ -214,7 +215,7 @@ const DashboardScreen = ({ navigation }: any) => {
                     </Card>
 
                     <Title style={{ marginTop: 8, marginBottom: 8, color: theme.colors.onBackground }}>
-                        Spent on {selectedDate}: <Text style={{ fontFamily: theme.custom.ledgerFont }}>₹{selectedDayTotal.toFixed(2)}</Text>
+                        Spent on {selectedDate}: <Text style={{ fontFamily: theme.custom.ledgerFont, color: selectedDayTotal < 0 ? theme.custom.good : theme.colors.onBackground }}>{formatSignedAmount(selectedDayTotal)}</Text>
                     </Title>
 
                     {selectedDayExpenses.length > 0 ? (
@@ -249,8 +250,8 @@ const DashboardScreen = ({ navigation }: any) => {
                                                         {expense.description || expense.smsText || 'Manual Entry'}
                                                     </Text>
                                                 </View>
-                                                <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 13, color: theme.colors.onSurface, marginRight: 6 }}>
-                                                    ₹{expense.amount.toFixed(2)}
+                                                <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 13, color: expense.amount < 0 ? theme.custom.good : theme.colors.onSurface, marginRight: 6 }}>
+                                                    {formatSignedAmount(expense.amount)}
                                                 </Text>
                                                 <List.Icon icon="chevron-right" color={theme.colors.outline} style={{ margin: 0 }} />
                                             </TouchableOpacity>
@@ -279,14 +280,14 @@ const DashboardScreen = ({ navigation }: any) => {
                                                         {b.category}
                                                     </Text>
                                                     <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 12, color: theme.colors.onSurfaceVariant }}>
-                                                        ₹{b.spent.toFixed(0)} / ₹{b.maxSpend.toFixed(0)}
+                                                        {formatSignedAmount(b.spent, 0)} / ₹{b.maxSpend.toFixed(0)}
                                                     </Text>
                                                     <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 12, fontWeight: '700', color: statusColor, marginLeft: 8, minWidth: 36, textAlign: 'right' }}>
-                                                        {Math.min(b.pct, 999).toFixed(0)}%
+                                                        {Math.max(0, Math.min(b.pct, 999)).toFixed(0)}%
                                                     </Text>
                                                 </View>
                                                 <View style={{ height: 6, borderRadius: 99, backgroundColor: theme.colors.surfaceVariant, overflow: 'hidden' }}>
-                                                    <View style={{ height: '100%', borderRadius: 99, width: `${Math.min(b.pct, 100)}%`, backgroundColor: statusColor }} />
+                                                    <View style={{ height: '100%', borderRadius: 99, width: `${Math.max(0, Math.min(b.pct, 100))}%`, backgroundColor: statusColor }} />
                                                 </View>
                                                 {b.pct > 100 && (
                                                     <Text style={{ fontSize: 10.5, color: statusColor, marginTop: 3 }}>

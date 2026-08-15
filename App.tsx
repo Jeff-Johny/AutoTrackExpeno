@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Provider as PaperProvider, Portal, Modal, Button, Text, Title, TextInput, ProgressBar, Snackbar, Chip } from 'react-native-paper';
-import { View, Dimensions, LogBox, useColorScheme } from 'react-native';
+import { View, Dimensions, LogBox, useColorScheme, TouchableOpacity } from 'react-native';
 
 // Suppress React 19 strict Fragment prop warning from react-native-screens internals.
 // This is a known incompatibility (react-native-screens <= 4.19) and does NOT affect functionality.
@@ -74,11 +74,19 @@ const App = () => {
   const categories = useStore((state: any) => state.categories);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [inputAmount, setInputAmount] = useState('');
+  // Refunds/reversed purchases/settled insurance claims — anything that puts
+  // money back — are tracked as a negative amount so they net out of every
+  // total automatically. The numeric input always shows a plain positive
+  // magnitude (numeric keyboards can't type "-" anyway); this toggle is the
+  // sign, seeded from whichever the SMS classifier already detected.
+  const [isCredit, setIsCredit] = useState(false);
 
   useEffect(() => {
     if (unsureData && unsureData.aiResult) {
       setSelectedCategory(unsureData.aiResult.category || '');
-      setInputAmount(unsureData.aiResult.amount ? unsureData.aiResult.amount.toString() : '');
+      const amount = unsureData.aiResult.amount || 0;
+      setInputAmount(amount ? Math.abs(amount).toString() : '');
+      setIsCredit(amount < 0);
     }
   }, [unsureData]);
 
@@ -221,12 +229,13 @@ const App = () => {
       return;
     }
 
-    const finalAmount = parseFloat(inputAmount) || 0;
+    const magnitude = parseFloat(inputAmount) || 0;
+    const finalAmount = isCredit ? -Math.abs(magnitude) : Math.abs(magnitude);
 
     if (unsureData.reviewExpenseId) {
       // Reviewing an already-saved expense: update both category and amount
       console.log('[App] Updating expense category and amount:', selectedCategory, finalAmount);
-      await expenseService.updateExpense(unsureData.reviewExpenseId, { 
+      await expenseService.updateExpense(unsureData.reviewExpenseId, {
         category: selectedCategory,
         amount: finalAmount
       });
@@ -238,7 +247,7 @@ const App = () => {
         await patternService.deletePattern(unsureData.unignorePatternId);
       }
 
-      if (finalAmount > 0) {
+      if (finalAmount !== 0) {
         console.log('[App] Adding expense:', selectedCategory, finalAmount);
         await expenseService.addExpense({
           amount: finalAmount,
@@ -316,10 +325,10 @@ const App = () => {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Title style={{ color: theme.colors.onSurface }}>
               {unsureData?.reviewExpenseId
-                ? 'Edit Expense'
+                ? isCredit ? 'Edit Refund' : 'Edit Expense'
                 : unsureData?.unignorePatternId
                 ? 'Unignore & Categorize'
-                : 'Confirm Expense'}
+                : isCredit ? 'Confirm Refund' : 'Confirm Expense'}
             </Title>
             {unsureData?.aiResult?.usedAI ? (
               <Chip
@@ -355,13 +364,30 @@ const App = () => {
             </View>
           )}
           <TextInput
-            label="Amount (₹)"
+            label={isCredit ? 'Amount refunded (₹)' : 'Amount (₹)'}
             value={inputAmount}
             onChangeText={setInputAmount}
             keyboardType="numeric"
             mode="outlined"
-            style={{ marginBottom: 10, marginTop: 5, fontFamily: theme.custom.ledgerFont, fontSize: 20 }}
+            textColor={isCredit ? theme.custom.good : theme.colors.onSurface}
+            outlineColor={isCredit ? theme.custom.good : undefined}
+            activeOutlineColor={isCredit ? theme.custom.good : theme.colors.primary}
+            style={{ marginBottom: 6, marginTop: 5, fontFamily: theme.custom.ledgerFont, fontSize: 20 }}
           />
+          <TouchableOpacity onPress={() => setIsCredit(!isCredit)} style={{ marginBottom: 10, alignSelf: 'flex-start' }}>
+            <Chip
+              icon={isCredit ? 'cash-refund' : 'cash-minus'}
+              compact
+              style={{
+                backgroundColor: isCredit ? theme.custom.goodTint : theme.colors.surfaceVariant,
+                borderWidth: isCredit ? 1.4 : 0,
+                borderColor: theme.custom.good,
+              }}
+              textStyle={{ color: isCredit ? theme.custom.good : theme.colors.onSurfaceVariant, fontWeight: isCredit ? '700' : '500', fontSize: 11.5 }}
+            >
+              This is money coming back (refund / credit)
+            </Chip>
+          </TouchableOpacity>
           {unsureData?.aiResult?.payee ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
               <Text style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}>Payee:</Text>
@@ -406,8 +432,12 @@ const App = () => {
             >
               Cancel
             </Button>
-            <Button mode="contained" onPress={handleConfirm}>
-              {unsureData?.reviewExpenseId ? 'Update' : 'Confirm Spend'}
+            <Button
+              mode="contained"
+              onPress={handleConfirm}
+              buttonColor={isCredit ? theme.custom.good : theme.colors.primary}
+            >
+              {unsureData?.reviewExpenseId ? 'Update' : isCredit ? 'Confirm Refund' : 'Confirm Spend'}
             </Button>
           </View>
         </Modal>

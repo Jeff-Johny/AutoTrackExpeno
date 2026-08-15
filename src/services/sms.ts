@@ -5,7 +5,7 @@ import { expenseService } from './expense';
 import { notificationService } from './notifications';
 import { dbService } from './db';
 import { useStore } from '../store/useStore';
-import { parseTransactionText } from './transactionParser';
+import { parseTransactionText, TransactionKind } from './transactionParser';
 import { guessCategoryFromText } from '../utils/categoryKeywords';
 
 
@@ -54,9 +54,11 @@ async function classifyTransaction(body: string, sender: string): Promise<Classi
     // Safety net: never surface a "pending" item for the user to confirm
     // when no source (regex, pattern, keyword, or AI) could pin down an
     // amount — that's how things like insurance claim-settled acknowledgements
-    // slip through as empty-amount "transactions". A real bank debit SMS
-    // always states an amount, so a missing one means this wasn't a spend.
-    if (result.status === 'pending' && (!result.amount || result.amount <= 0)) {
+    // slip through as empty-amount "transactions". A real bank debit/credit
+    // SMS always states an amount, so a missing one means nothing happened.
+    // (Credits are stored as negative amounts — `!result.amount` still
+    // correctly only catches 0/null/NaN, not negative magnitudes.)
+    if (result.status === 'pending' && !result.amount) {
         return {
             ...result,
             status: 'system_ignored',
@@ -66,12 +68,19 @@ async function classifyTransaction(body: string, sender: string): Promise<Classi
     return result;
 }
 
+/** Credits are tracked as negative amounts so every downstream sum (category
+ * totals, monthly total, budget bars) nets them out automatically without
+ * needing to know about credit/debit as a separate concept. */
+function signAmount(kind: TransactionKind, magnitude: number): number {
+    return kind === 'credit' ? -Math.abs(magnitude) : Math.abs(magnitude);
+}
+
 async function classifyTransactionInner(body: string, sender: string): Promise<ClassifiedTransaction> {
     const parsed = parseTransactionText(body);
     console.log('[SMS Service] Parsed (regex, no AI):', parsed);
 
-    if (!parsed.isSpending) {
-        console.log('[SMS Service] Classify: pre-filter says not spending');
+    if (parsed.kind === 'none') {
+        console.log('[SMS Service] Classify: pre-filter says not a transaction');
         return {
             status: 'system_ignored',
             amount: 0,
@@ -99,7 +108,7 @@ async function classifyTransactionInner(body: string, sender: string): Promise<C
         }
         return {
             status: 'pending',
-            amount: parsed.amount || 0,
+            amount: parsed.amount ? signAmount(parsed.kind, parsed.amount) : 0,
             payee: parsed.payee || pattern.pattern,
             category: pattern.category || null,
             description: `Pattern-matched: ${pattern.pattern}`,
@@ -113,7 +122,7 @@ async function classifyTransactionInner(body: string, sender: string): Promise<C
         console.log('[SMS Service] Classify: keyword dictionary match:', keywordCategory);
         return {
             status: 'pending',
-            amount: parsed.amount || 0,
+            amount: parsed.amount ? signAmount(parsed.kind, parsed.amount) : 0,
             payee: parsed.payee,
             category: keywordCategory,
             description: 'Keyword-matched category',
@@ -126,14 +135,16 @@ async function classifyTransactionInner(body: string, sender: string): Promise<C
     const liveCategories = useStore.getState().categories.map(c => c.category);
     const aiResult = await geminiService.categorizeSms(body, liveCategories.length ? liveCategories : undefined);
 
-    // The regex pre-filter (isLikelySpendingText) is a coarse, keyword-based
-    // net that can't cover every non-spend template it hasn't seen (e.g. a
-    // new insurer's claim-settled wording). DeepSeek is asked to judge
+    // The regex pre-filter is a coarse, keyword-based net that can't cover
+    // every non-spend template it hasn't seen. DeepSeek is asked to judge
     // isSpending independently with much broader context — trust a definite
-    // `false` from it here rather than discarding that signal and only
-    // reading category/amount/payee off the response. This is what lets new,
-    // unseen non-spend patterns get rejected without a keyword-list update.
-    if (aiResult && aiResult.isSpending === false) {
+    // `false` from it here rather than discarding that signal, but only to
+    // second-guess a *debit* classification: the AI's own prompt treats
+    // every credit/refund as isSpending:false too (that's correct for
+    // "is this a spend" but not "is this worth tracking"), so applying this
+    // to a message our parser already identified as a credit would silently
+    // undo the whole point of tracking it.
+    if (parsed.kind === 'debit' && aiResult && aiResult.isSpending === false) {
         console.log('[SMS Service] Classify: AI determined this is not a spend:', aiResult);
         return {
             status: 'system_ignored',
@@ -146,9 +157,10 @@ async function classifyTransactionInner(body: string, sender: string): Promise<C
         };
     }
 
+    const rawAmount = parsed.amount || aiResult?.amount || 0;
     return {
         status: 'pending',
-        amount: parsed.amount || aiResult?.amount || 0,
+        amount: rawAmount ? signAmount(parsed.kind, rawAmount) : 0,
         payee: parsed.payee || aiResult?.payee || null,
         category: aiResult?.category || null,
         description: aiResult?.description || (aiResult ? 'AI-categorized' : 'Needs manual categorization (AI unavailable)'),
@@ -395,9 +407,10 @@ export const smsService = {
                             externalSmsId: smsId,
                             date: date,
                         });
+                        const isCredit = classified.amount < 0;
                         notificationService.notify(
-                            "Expense Detected",
-                            `Detected Rs ${classified.amount} spending from ${originatingAddress}. Tap to confirm.`,
+                            isCredit ? "Refund Detected" : "Expense Detected",
+                            `Detected Rs ${Math.abs(classified.amount)} ${isCredit ? 'credited from' : 'spending from'} ${originatingAddress}. Tap to confirm.`,
                             { smsText: body, sender: originatingAddress, aiResult, externalSmsId: smsId }
                         );
                     }

@@ -8,6 +8,7 @@ import { smsService } from '../services/sms';
 import { Expense } from '../utils/constants';
 import { useAppTheme } from '../theme/theme';
 import { getCategoryColor } from '../utils/categoryColors';
+import { formatSignedAmount } from '../utils/format';
 
 const TransactionsScreen = ({ navigation }: any) => {
     const theme = useAppTheme();
@@ -53,7 +54,7 @@ const TransactionsScreen = ({ navigation }: any) => {
     const confirmDeleteExpense = (item: Expense) => {
         Alert.alert(
             'Delete transaction?',
-            `Remove ₹${item.amount.toFixed(2)} · ${item.category} from your records. This can't be undone.`,
+            `Remove ${formatSignedAmount(item.amount)} · ${item.category} from your records. This can't be undone.`,
             [
                 { text: 'Cancel', style: 'cancel' },
                 { text: 'Delete', style: 'destructive', onPress: () => expenseService.deleteExpense(item.id) },
@@ -63,11 +64,12 @@ const TransactionsScreen = ({ navigation }: any) => {
 
     const renderTransactionItem = ({ item }: { item: Expense }) => {
         const catColor = getCategoryColor(item.category, theme.custom.categoryColors);
+        const isCredit = item.amount < 0;
         return (
             <List.Item
                 title={() => (
-                    <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 14, color: theme.colors.onSurface }}>
-                        ₹{item.amount.toFixed(2)}
+                    <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 14, color: isCredit ? theme.custom.good : theme.colors.onSurface }}>
+                        {formatSignedAmount(item.amount)}{isCredit ? '  ·  Refund' : ''}
                     </Text>
                 )}
                 description={`${item.category} • ${formatDate(item.date)}`}
@@ -162,8 +164,8 @@ const TransactionsScreen = ({ navigation }: any) => {
         <List.Item
           title={() => (
             <Text style={{ fontSize: 14, color: theme.colors.onSurface }}>
-              {item.amount > 0 ? (
-                <><Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600' }}>₹{item.amount}</Text> ({item.payee || item.sender})</>
+              {item.amount ? (
+                <><Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', color: item.amount < 0 ? theme.custom.good : theme.colors.onSurface }}>{formatSignedAmount(item.amount)}</Text> ({item.payee || item.sender})</>
               ) : item.sender}
             </Text>
           )}

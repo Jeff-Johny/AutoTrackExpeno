@@ -106,10 +106,10 @@ const CategoriesScreen = () => {
                                                             ? <Text style={{ color: statusColor, fontWeight: '700' }}>over by ₹{(spent - item.maxSpend).toFixed(0)}</Text>
                                                             : `₹${item.maxSpend.toFixed(0)} monthly limit`}
                                                     </Text>
-                                                    <Text style={{ fontSize: 10, fontWeight: '700', color: statusColor }}>{Math.min(pct, 999).toFixed(0)}%</Text>
+                                                    <Text style={{ fontSize: 10, fontWeight: '700', color: statusColor }}>{Math.max(0, Math.min(pct, 999)).toFixed(0)}%</Text>
                                                 </View>
                                                 <View style={[styles.budgetBar, { backgroundColor: theme.colors.surfaceVariant }]}>
-                                                    <View style={{ height: '100%', borderRadius: 99, width: `${Math.min(pct, 100)}%`, backgroundColor: statusColor }} />
+                                                    <View style={{ height: '100%', borderRadius: 99, width: `${Math.max(0, Math.min(pct, 100))}%`, backgroundColor: statusColor }} />
                                                 </View>
                                             </TouchableOpacity>
                                         ) : (

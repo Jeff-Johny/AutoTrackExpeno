@@ -7,36 +7,54 @@
  * formats show up; unmatched fields degrade to null rather than a guess.
  */
 
+export type TransactionKind = 'debit' | 'credit' | 'none';
+
 export interface ParsedTransaction {
-  isSpending: boolean;
+  kind: TransactionKind;
+  /** Always a positive magnitude — sign is applied by the caller based on `kind`. */
   amount: number | null;
   payee: string | null;
 }
 
 const OTP_KEYWORDS = ['otp', 'verification code', 'login code', 'security code', 'verify your'];
-// Insurance claim/policy acknowledgement notices ("your claim has been
-// settled", "claim intimation registered") aren't debits — they're status
-// updates from the insurer, often with no amount at all, or an amount that
-// is money coming IN (claim payout), never a spend. Reject them the same
-// way OTP messages are rejected, before the generic debit-keyword check
-// below (which would otherwise catch stray "payment"/"paid" wording in
-// these templates and misclassify them as spending).
-const NON_SPENDING_KEYWORDS = [
-  'claim has been', 'claim is settled', 'claim settled', 'claim settlement',
-  'settlement of your claim', 'claim intimation', 'claim registered',
-  'claim number', 'claim id', 'policy no', 'sum assured', 'claim status',
+// Claim *status* updates ("registered", "intimation", "under process") are
+// never a financial event regardless of wording elsewhere in the message —
+// no money has moved yet. Distinct from a *settled* claim below, which is
+// real money landing in the account and should be captured as a credit.
+const CLAIM_STATUS_KEYWORDS = [
+  'claim intimation', 'claim registered', 'claim number', 'claim id',
+  'policy no', 'sum assured', 'claim status',
 ];
 const DEBIT_KEYWORDS = ['debited', 'spent', 'paid', 'deducted', 'sent to', 'payment of', 'payment to', 'withdrawn', 'transferred'];
-const CREDIT_KEYWORDS = ['credited', 'received from', 'refund', 'cashback', 'added to your', 'received rs'];
+// Money coming IN — refunds for returned purchases, cashback, reversed
+// transactions, and settled insurance claims all land here so they get
+// tracked as a negative (subtracting) entry instead of silently dropped.
+const CREDIT_KEYWORDS = [
+  'credited', 'received from', 'refund', 'refunded', 'cashback', 'added to your',
+  'received rs', 'reversed', 'reversal', 'claim settled', 'claim has been settled',
+  'claim settlement', 'settlement of your claim',
+];
 const GENERAL_PAYMENT_KEYWORDS = ['vpa', 'upi', 'transaction', 'payment'];
 
-export function isLikelySpendingText(text: string): boolean {
+/**
+ * Checked in this order deliberately: OTP and bare claim-status updates are
+ * never transactional, regardless of other wording in the message. Credit
+ * is checked before debit — "credited"/"refund" is a stronger, more
+ * specific signal than incidental "paid"/"payment" wording that can appear
+ * in a credit message's boilerplate (e.g. "paid via the same method").
+ */
+export function classifyTransactionKind(text: string): TransactionKind {
   const lower = text.toLowerCase();
-  if (OTP_KEYWORDS.some(kw => lower.includes(kw))) return false;
-  if (NON_SPENDING_KEYWORDS.some(kw => lower.includes(kw))) return false;
-  if (DEBIT_KEYWORDS.some(kw => lower.includes(kw))) return true;
-  if (CREDIT_KEYWORDS.some(kw => lower.includes(kw))) return false;
-  return GENERAL_PAYMENT_KEYWORDS.some(kw => lower.includes(kw));
+  if (OTP_KEYWORDS.some(kw => lower.includes(kw))) return 'none';
+  if (CLAIM_STATUS_KEYWORDS.some(kw => lower.includes(kw))) return 'none';
+  if (CREDIT_KEYWORDS.some(kw => lower.includes(kw))) return 'credit';
+  if (DEBIT_KEYWORDS.some(kw => lower.includes(kw))) return 'debit';
+  return GENERAL_PAYMENT_KEYWORDS.some(kw => lower.includes(kw)) ? 'debit' : 'none';
+}
+
+/** @deprecated kept for any external reference — prefer classifyTransactionKind(). */
+export function isLikelySpendingText(text: string): boolean {
+  return classifyTransactionKind(text) === 'debit';
 }
 
 const AMOUNT_PATTERNS = [
@@ -113,7 +131,7 @@ export function extractPayee(text: string): string | null {
 
 export function parseTransactionText(text: string): ParsedTransaction {
   return {
-    isSpending: isLikelySpendingText(text),
+    kind: classifyTransactionKind(text),
     amount: extractAmount(text),
     payee: extractPayee(text),
   };
