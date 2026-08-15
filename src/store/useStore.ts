@@ -25,6 +25,8 @@ interface AppState {
     setIgnoredSms: (ignoredSms: any[]) => void;
     syncStatus: 'idle' | 'syncing' | 'completed';
     setSyncStatus: (status: 'idle' | 'syncing' | 'completed') => void;
+    themePreference: 'light' | 'dark' | 'system';
+    setThemePreference: (preference: 'light' | 'dark' | 'system') => void;
 }
 export const useStore = create<AppState>((set) => ({
     expenses: [],
@@ -103,4 +105,6 @@ export const useStore = create<AppState>((set) => ({
     })),
     syncStatus: 'idle',
     setSyncStatus: (status) => set({ syncStatus: status }),
+    themePreference: 'system',
+    setThemePreference: (preference) => set({ themePreference: preference }),
 }));

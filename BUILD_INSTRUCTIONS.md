@@ -4,7 +4,6 @@
 
 ✅ All source code is ready  
 ✅ Dependencies configured  
-✅ google-services.json placeholder created  
 ⚠️ Gradle cache permission issue (macOS system level)
 
 ## Step-by-Step Build Instructions
@@ -56,22 +55,6 @@ Or install manually:
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Step 4: Complete Firebase Setup
-
-1. Go to [console.firebase.google.com](https://console.firebase.google.com)
-2. Create project: "AutoTrackExpeno"
-3. Add Android app: `com.autotrackexpeno`
-4. Download `google-services.json`
-5. Replace placeholder at: `android/app/google-services.json`
-6. Re-enable plugin in `android/app/build.gradle`:
-   ```gradle
-   apply plugin: "com.google.gms.google-services"
-   ```
-7. Rebuild:
-   ```bash
-   ./gradlew clean assembleDebug
-   ```
-
 ## Troubleshooting
 
 ### "Permission denied" on gradle-8.13-bin.zip.lck
@@ -92,8 +75,7 @@ Then retry build.
 
 ### "File not found: google-services.json"
 
-**This is expected for development.**
-The placeholder is already in place. Firebase setup is optional - Gmail will still work with Google Sign-In alone.
+**This is expected for development.** The placeholder is already in place.
 
 ### Compilation errors
 
@@ -127,24 +109,7 @@ App will install as "AutoTrackExpeno"
 ### 2. Grant Permissions
 
 When you open app, grant:
-- SMS read permission (for existing SMS sync)
-- Gmail scope (when you tap email settings)
-
-### 3. Test Email Sync
-
-- Open app
-- Go to Settings
-- Tap "Enable Gmail Sync"
-- Sign in with Google account with bank emails
-
-### 4. Verify Deduplication
-
-Send yourself test SMS + email from your bank with same transaction:
-- Amount: ₹100
-- Payee: Test Merchant
-- Time: Same time
-
-Should appear as ONE transaction in pending queue.
+- SMS read permission (for SMS sync)
 
 ## Build Commands Reference
 
@@ -253,23 +218,6 @@ If something goes wrong, check:
    ```bash
    adb devices
    ```
-
-## Email Feature Checklist
-
-After successful build:
-
-- [ ] App installs
-- [ ] SMS sync still works
-- [ ] Can open Settings
-- [ ] Can enable Gmail sync
-- [ ] Gmail sign-in works
-- [ ] Recent emails fetch
-- [ ] Can process test email
-- [ ] Pending queue shows email transaction
-- [ ] Deduplication works (SMS + email)
-- [ ] Payee ignore rules apply to emails
-- [ ] Categorization works for emails
-- [ ] User can confirm email transaction
 
 ## Support
 

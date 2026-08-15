@@ -9,7 +9,14 @@ const openai = new OpenAI({
 });
 
 export const aiService = {
-    async categorizeSms(smsText: string) {
+    /**
+     * Last-resort categorizer — only called when neither a learned payee
+     * pattern nor the static keyword dictionary (see categoryKeywords.ts)
+     * could categorize the transaction. `categories` should be the user's
+     * live category list, not a hardcoded one, so suggestions stay valid
+     * as the user edits their categories.
+     */
+    async categorizeSms(smsText: string, categories: string[] = DEFAULT_CATEGORIES) {
         try {
             console.log('[AI Service] Calling DeepSeek API...');
 
@@ -42,7 +49,7 @@ Return ONLY a JSON object with these keys:
 - isSpending: boolean (true ONLY for confirmed completed debit transactions)
 - amount: number (the amount spent, 0 if isSpending is false)
 - payee: string (the merchant, business, or person receiving the payment. Extract this name from the SMS, e.g. "Amazon", "Uber", "Zomato", "Swiggy", or a person's name. Clean it up so it is just the name of the payee/merchant, not the full VPA or extra text. If not present or not clear, return null)
-- category: string (one of: ${DEFAULT_CATEGORIES.join(', ')})
+- category: string (one of: ${categories.join(', ')})
 - description: string (a short description of the expense)
 - isCertain: boolean (true if you are very sure about the category, false if it's a guess)
 

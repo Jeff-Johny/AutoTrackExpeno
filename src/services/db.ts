@@ -103,6 +103,16 @@ class DatabaseService {
         // Column already exists, ignore
       }
 
+      // sms_transactions accumulates every SMS/email ever processed —
+      // including every pre-filtered OTP/promo (status='system_ignored'),
+      // which never gets pruned and can grow into the thousands over time.
+      // The pending/ignored screens filter and sort by (status, date) on
+      // every load, so this index keeps that from becoming a full table
+      // scan as the table grows.
+      this.db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sms_transactions_status_date ON sms_transactions(status, date DESC)'
+      );
+      console.log('DB: sms_transactions status/date index checked');
 
       // Initialize default categories
       const categories = [
@@ -155,6 +165,56 @@ class DatabaseService {
       db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['last_sync_timestamp', timestamp.toString()]);
     } catch (error) {
       console.error('DB: Failed to set last sync timestamp', error);
+    }
+  }
+
+  /** 'light' | 'dark' | 'system' — user's manual override, independent of the OS setting. */
+  async getThemePreference(): Promise<'light' | 'dark' | 'system' | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute('SELECT value FROM settings WHERE key = ?', ['theme_preference']);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return rows[0].value as 'light' | 'dark' | 'system';
+      }
+      return null;
+    } catch (error) {
+      console.error('DB: Failed to get theme preference', error);
+      return null;
+    }
+  }
+
+  async setThemePreference(preference: 'light' | 'dark' | 'system') {
+    try {
+      const db = this.getDb();
+      db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['theme_preference', preference]);
+    } catch (error) {
+      console.error('DB: Failed to set theme preference', error);
+    }
+  }
+
+  /** Daily reminder to review pending categorizations — hour/minute in 24h local time. */
+  async getReminderSettings(): Promise<{ enabled: boolean; hour: number; minute: number } | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute('SELECT value FROM settings WHERE key = ?', ['reminder_settings']);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return JSON.parse(rows[0].value);
+      }
+      return null;
+    } catch (error) {
+      console.error('DB: Failed to get reminder settings', error);
+      return null;
+    }
+  }
+
+  async setReminderSettings(settings: { enabled: boolean; hour: number; minute: number }) {
+    try {
+      const db = this.getDb();
+      db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['reminder_settings', JSON.stringify(settings)]);
+    } catch (error) {
+      console.error('DB: Failed to set reminder settings', error);
     }
   }
 
@@ -219,10 +279,20 @@ class DatabaseService {
     }
   }
 
-  async getIgnoredSmsTransactions(): Promise<any[]> {
+  /**
+   * `system_ignored` covers every pre-filtered OTP/promo SMS ever seen and
+   * is never pruned, so this can grow into the thousands over months of
+   * use — capped to the most recent `limit` so the Ignored tab (and the
+   * query itself) stays fast. This is a display cap only; nothing is
+   * deleted, and confirmed/pending transactions are unaffected.
+   */
+  async getIgnoredSmsTransactions(limit: number = 300): Promise<any[]> {
     try {
       const db = this.getDb();
-      const result = db.execute("SELECT * FROM sms_transactions WHERE status IN ('user_ignored', 'system_ignored') ORDER BY date DESC");
+      const result = db.execute(
+        "SELECT * FROM sms_transactions WHERE status IN ('user_ignored', 'system_ignored') ORDER BY date DESC LIMIT ?",
+        [limit]
+      );
       return result.rows?._array || [];
     } catch (e) {
       console.error('DB: Failed to get ignored SMS transactions', e);

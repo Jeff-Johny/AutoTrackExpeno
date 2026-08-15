@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Alert,
@@ -8,13 +8,19 @@ import {
   Text,
   ActivityIndicator,
   Platform,
+  Linking,
 } from 'react-native';
-import { Appbar } from 'react-native-paper';
+import { Appbar, SegmentedButtons, Switch, Portal, Dialog, Menu, Button } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { excelService } from '../services/excel';
 import { smsService } from '../services/sms';
 import { backupService } from '../services/backup';
+import { dbService } from '../services/db';
+import { notificationService } from '../services/notifications';
 import { pick, types as DocumentPickerTypes, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
+import { useAppTheme } from '../theme/theme';
+
+const pad2 = (n: number) => n.toString().padStart(2, '0');
 
 // ─── Icon helper (uses react-native-vector-icons via text emoji fallback) ──
 const Icon = ({ name }: { name: string }) => {
@@ -33,14 +39,16 @@ const Icon = ({ name }: { name: string }) => {
 };
 
 // ─── Reusable card ──────────────────────────────────────────────────────────
-const Card = ({ children, style }: { children: React.ReactNode; style?: any }) => (
-  <View style={[styles.card, style]}>{children}</View>
-);
+const Card = ({ children, style }: { children: React.ReactNode; style?: any }) => {
+  const theme = useAppTheme();
+  return <View style={[styles.card, { backgroundColor: theme.colors.surface }, style]}>{children}</View>;
+};
 
 // ─── Section header ─────────────────────────────────────────────────────────
-const SectionHeader = ({ title }: { title: string }) => (
-  <Text style={styles.sectionHeader}>{title}</Text>
-);
+const SectionHeader = ({ title }: { title: string }) => {
+  const theme = useAppTheme();
+  return <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant }]}>{title}</Text>;
+};
 
 // ─── Action button ──────────────────────────────────────────────────────────
 const ActionButton = ({
@@ -48,7 +56,7 @@ const ActionButton = ({
   label,
   sublabel,
   onPress,
-  color = '#6C63FF',
+  color,
   loading = false,
   disabled = false,
 }: {
@@ -59,33 +67,120 @@ const ActionButton = ({
   color?: string;
   loading?: boolean;
   disabled?: boolean;
-}) => (
-  <TouchableOpacity
-    style={[styles.actionBtn, { opacity: disabled ? 0.5 : 1 }]}
-    onPress={onPress}
-    disabled={disabled || loading}
-    activeOpacity={0.75}
-  >
-    <View style={[styles.actionBtnIcon, { backgroundColor: color + '22' }]}>
-      {loading ? (
-        <ActivityIndicator size="small" color={color} />
-      ) : (
-        <Text style={[styles.actionBtnEmoji, { color }]}>{icon}</Text>
-      )}
-    </View>
-    <View style={styles.actionBtnText}>
-      <Text style={styles.actionBtnLabel}>{label}</Text>
-      {sublabel ? <Text style={styles.actionBtnSub}>{sublabel}</Text> : null}
-    </View>
-    <Text style={[styles.chevron, { color }]}>›</Text>
-  </TouchableOpacity>
-);
+}) => {
+  const theme = useAppTheme();
+  const tint = color || theme.colors.primary;
+  return (
+    <TouchableOpacity
+      style={[styles.actionBtn, { opacity: disabled ? 0.5 : 1 }]}
+      onPress={onPress}
+      disabled={disabled || loading}
+      activeOpacity={0.75}
+    >
+      <View style={[styles.actionBtnIcon, { backgroundColor: tint + '22' }]}>
+        {loading ? (
+          <ActivityIndicator size="small" color={tint} />
+        ) : (
+          <Text style={[styles.actionBtnEmoji, { color: tint }]}>{icon}</Text>
+        )}
+      </View>
+      <View style={styles.actionBtnText}>
+        <Text style={[styles.actionBtnLabel, { color: theme.colors.onSurface }]}>{label}</Text>
+        {sublabel ? <Text style={[styles.actionBtnSub, { color: theme.colors.onSurfaceVariant }]}>{sublabel}</Text> : null}
+      </View>
+      <Text style={[styles.chevron, { color: tint }]}>›</Text>
+    </TouchableOpacity>
+  );
+};
 
 // ─── Main screen ────────────────────────────────────────────────────────────
 const SettingsScreen = () => {
+  const theme = useAppTheme();
   const expenses = useStore((state) => state.expenses);
   const categories = useStore((state) => state.categories);
   const patterns = useStore((state) => state.patterns);
+  const themePreference = useStore((state) => state.themePreference);
+  const setThemePreference = useStore((state) => state.setThemePreference);
+
+  const handleThemeChange = (value: string) => {
+    const preference = value as 'light' | 'dark' | 'system';
+    setThemePreference(preference);
+    dbService.setThemePreference(preference);
+  };
+
+  // ── Daily reminder ─────────────────────────────────────────────────────────
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderHour, setReminderHour] = useState(9);
+  const [reminderMinute, setReminderMinute] = useState(0);
+  const [timeDialogVisible, setTimeDialogVisible] = useState(false);
+  const [hourMenuVisible, setHourMenuVisible] = useState(false);
+  const [minuteMenuVisible, setMinuteMenuVisible] = useState(false);
+  const [draftHour, setDraftHour] = useState(9);
+  const [draftMinute, setDraftMinute] = useState(0);
+
+  useEffect(() => {
+    dbService.getReminderSettings().then((saved) => {
+      if (saved) {
+        setReminderEnabled(saved.enabled);
+        setReminderHour(saved.hour);
+        setReminderMinute(saved.minute);
+      }
+    });
+  }, []);
+
+  const persistReminder = (enabled: boolean, hour: number, minute: number) => {
+    dbService.setReminderSettings({ enabled, hour, minute });
+  };
+
+  const handleReminderToggle = (value: boolean) => {
+    if (value) {
+      try {
+        notificationService.scheduleDailyReminder(reminderHour, reminderMinute);
+        setReminderEnabled(true);
+        persistReminder(true, reminderHour, reminderMinute);
+      } catch {
+        // Android 13+ needs the "Alarms & reminders" special access granted
+        // per-app before exact-time alarms can be scheduled — react-native
+        // -push-notification doesn't expose a check for it, so we only find
+        // out by the schedule call throwing. Guide the user there instead
+        // of leaving the toggle in a state that silently won't fire.
+        Alert.alert(
+          "Can't schedule reminder",
+          'Android needs permission to send reminders at an exact time. Enable "Alarms & reminders" for this app in Settings, then try again.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      }
+    } else {
+      notificationService.cancelDailyReminder();
+      setReminderEnabled(false);
+      persistReminder(false, reminderHour, reminderMinute);
+    }
+  };
+
+  const openTimeDialog = () => {
+    setDraftHour(reminderHour);
+    setDraftMinute(reminderMinute);
+    setTimeDialogVisible(true);
+  };
+
+  const saveTime = () => {
+    setReminderHour(draftHour);
+    setReminderMinute(draftMinute);
+    setTimeDialogVisible(false);
+    if (reminderEnabled) {
+      try {
+        notificationService.scheduleDailyReminder(draftHour, draftMinute);
+      } catch {
+        // Already enabled once before, so permission was presumably granted
+        // then; a failure here is unusual — the toggle above is the primary
+        // place that surfaces the Settings prompt.
+      }
+    }
+    persistReminder(reminderEnabled, draftHour, draftMinute);
+  };
 
   const [exporting, setExporting] = useState(false);
   const [importingMerge, setImportingMerge] = useState(false);
@@ -180,28 +275,28 @@ const SettingsScreen = () => {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F0F2F8' }}>
-      <Appbar.Header style={{ backgroundColor: '#F0F2F8', elevation: 0 }}>
-        <Appbar.Content title="Settings" />
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background, elevation: 0 }}>
+        <Appbar.Content title="Settings" titleStyle={{ color: theme.colors.onSurface }} />
       </Appbar.Header>
       <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
       {/* ── Stats banner ───────────────────────────────────────────────── */}
-      <Card style={styles.statsBanner}>
+      <Card style={[styles.statsBanner, { backgroundColor: theme.colors.primary }]}>
         <Text style={styles.statsTitle}>Current Data</Text>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{expenses.length}</Text>
+            <Text style={[styles.statNumber, { fontFamily: theme.custom.ledgerFont }]}>{expenses.length}</Text>
             <Text style={styles.statLabel}>Expenses</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{categories.length}</Text>
+            <Text style={[styles.statNumber, { fontFamily: theme.custom.ledgerFont }]}>{categories.length}</Text>
             <Text style={styles.statLabel}>Categories</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{patterns.length}</Text>
+            <Text style={[styles.statNumber, { fontFamily: theme.custom.ledgerFont }]}>{patterns.length}</Text>
             <Text style={styles.statLabel}>Patterns</Text>
           </View>
         </View>
@@ -215,17 +310,17 @@ const SettingsScreen = () => {
           label="Full Backup (JSON)"
           sublabel="Expenses · Categories · Patterns"
           onPress={handleExportBackup}
-          color="#6C63FF"
+          color={theme.custom.accentInk}
           loading={exporting}
           disabled={exporting || importingMerge || importingReplace}
         />
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: theme.colors.surfaceVariant }]} />
         <ActionButton
           icon="📊"
           label="Export to Excel"
           sublabel="Expenses only (.xlsx)"
           onPress={handleExportExcel}
-          color="#22B07D"
+          color={theme.custom.good}
           loading={exportingExcel}
           disabled={exportingExcel || exporting}
         />
@@ -239,26 +334,26 @@ const SettingsScreen = () => {
           label="Merge Import"
           sublabel="Adds new records, skips duplicates"
           onPress={() => handleImport('merge')}
-          color="#F59E0B"
+          color={theme.colors.onSurfaceVariant}
           loading={importingMerge}
           disabled={exporting || importingMerge || importingReplace}
         />
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: theme.colors.surfaceVariant }]} />
         <ActionButton
           icon="♻️"
           label="Replace All Data"
           sublabel="Wipes current data, restores from backup"
           onPress={() => handleImport('replace')}
-          color="#EF4444"
+          color={theme.custom.critical}
           loading={importingReplace}
           disabled={exporting || importingMerge || importingReplace}
         />
       </Card>
 
       {/* Info box */}
-      <View style={styles.infoBox}>
+      <View style={[styles.infoBox, { backgroundColor: theme.colors.primaryContainer }]}>
         <Text style={styles.infoIcon}>ℹ️</Text>
-        <Text style={styles.infoText}>
+        <Text style={[styles.infoText, { color: theme.colors.onPrimaryContainer }]}>
           <Text style={{ fontWeight: '700' }}>Full Backup</Text> exports all your data as a JSON
           file to the Downloads folder. Use <Text style={{ fontWeight: '700' }}>Merge Import</Text>{' '}
           to restore without losing existing data, or{' '}
@@ -266,14 +361,60 @@ const SettingsScreen = () => {
         </Text>
       </View>
 
+      {/* ── Appearance section ─────────────────────────────────────────── */}
+      <SectionHeader title="Appearance" />
+      <Card>
+        <View style={{ padding: 12 }}>
+          <SegmentedButtons
+            value={themePreference}
+            onValueChange={handleThemeChange}
+            buttons={[
+              { value: 'system', label: 'System', icon: 'theme-light-dark' },
+              { value: 'light', label: 'Light', icon: 'white-balance-sunny' },
+              { value: 'dark', label: 'Dark', icon: 'moon-waning-crescent' },
+            ]}
+          />
+        </View>
+      </Card>
+
+      {/* ── Reminders section ──────────────────────────────────────────── */}
+      <SectionHeader title="Reminders" />
+      <Card>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoRowIcon}>⏰</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoRowLabel, { color: theme.colors.onSurface }]}>Daily review reminder</Text>
+            <Text style={[styles.infoRowSub, { color: theme.colors.onSurfaceVariant }]}>Nudge to approve pending categorizations</Text>
+          </View>
+          <Switch value={reminderEnabled} onValueChange={handleReminderToggle} color={theme.colors.primary} />
+        </View>
+        {reminderEnabled && (
+          <>
+            <View style={[styles.divider, { backgroundColor: theme.colors.surfaceVariant }]} />
+            <TouchableOpacity onPress={openTimeDialog}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoRowIcon}>🕐</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.infoRowLabel, { color: theme.colors.onSurface }]}>Remind me at</Text>
+                  <Text style={[styles.infoRowSub, { color: theme.colors.onSurfaceVariant }]}>Tap to change</Text>
+                </View>
+                <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 18, fontWeight: '700', color: theme.colors.primary }}>
+                  {pad2(reminderHour)}:{pad2(reminderMinute)}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </>
+        )}
+      </Card>
+
       {/* ── Account section ────────────────────────────────────────────── */}
       <SectionHeader title="Account" />
       <Card>
         <View style={styles.infoRow}>
           <Text style={styles.infoRowIcon}>🤖</Text>
           <View>
-            <Text style={styles.infoRowLabel}>AI Categorization</Text>
-            <Text style={styles.infoRowSub}>Gemini API is active</Text>
+            <Text style={[styles.infoRowLabel, { color: theme.colors.onSurface }]}>AI Categorization</Text>
+            <Text style={[styles.infoRowSub, { color: theme.colors.onSurfaceVariant }]}>DeepSeek API is active</Text>
           </View>
         </View>
       </Card>
@@ -289,23 +430,65 @@ const SettingsScreen = () => {
             const setUnsureData = useStore.getState().setUnsureData;
             await smsService.testRecentSmsSync(setUnsureData);
           }}
-          color="#64748B"
+          color={theme.colors.onSurfaceVariant}
         />
       </Card>
 
       <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Portal>
+        <Dialog visible={timeDialogVisible} onDismiss={() => setTimeDialogVisible(false)}>
+          <Dialog.Title>Remind me at</Dialog.Title>
+          <Dialog.Content>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <Menu
+                visible={hourMenuVisible}
+                onDismiss={() => setHourMenuVisible(false)}
+                anchor={
+                  <Button mode="outlined" onPress={() => setHourMenuVisible(true)}>
+                    {pad2(draftHour)}
+                  </Button>
+                }
+              >
+                <ScrollView style={{ maxHeight: 300 }}>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <Menu.Item key={h} title={pad2(h)} onPress={() => { setDraftHour(h); setHourMenuVisible(false); }} />
+                  ))}
+                </ScrollView>
+              </Menu>
+              <Text style={{ fontSize: 18, color: theme.colors.onSurface }}>:</Text>
+              <Menu
+                visible={minuteMenuVisible}
+                onDismiss={() => setMinuteMenuVisible(false)}
+                anchor={
+                  <Button mode="outlined" onPress={() => setMinuteMenuVisible(true)}>
+                    {pad2(draftMinute)}
+                  </Button>
+                }
+              >
+                {[0, 15, 30, 45].map((m) => (
+                  <Menu.Item key={m} title={pad2(m)} onPress={() => { setDraftMinute(m); setMinuteMenuVisible(false); }} />
+                ))}
+              </Menu>
+            </View>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setTimeDialogVisible(false)}>Cancel</Button>
+            <Button onPress={saveTime}>Save</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </View>
   );
 };
 
 export default SettingsScreen;
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
+// ─── Styles (layout only — colors are applied inline from the theme above) ─
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F2F8',
   },
   content: {
     padding: 16,
@@ -313,7 +496,6 @@ const styles = StyleSheet.create({
 
   // Stats banner
   statsBanner: {
-    backgroundColor: '#6C63FF',
     marginBottom: 24,
   },
   statsTitle: {
@@ -333,7 +515,7 @@ const styles = StyleSheet.create({
   },
   statNumber: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
   },
   statLabel: {
@@ -351,7 +533,6 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#94A3B8',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
     marginBottom: 8,
@@ -361,7 +542,6 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     padding: 4,
     marginBottom: 16,
@@ -396,11 +576,9 @@ const styles = StyleSheet.create({
   actionBtnLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1E293B',
   },
   actionBtnSub: {
     fontSize: 12,
-    color: '#94A3B8',
     marginTop: 2,
   },
   chevron: {
@@ -411,14 +589,12 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
     marginHorizontal: 14,
   },
 
   // Info box
   infoBox: {
     flexDirection: 'row',
-    backgroundColor: '#EFF6FF',
     borderRadius: 12,
     padding: 14,
     marginBottom: 20,
@@ -433,7 +609,6 @@ const styles = StyleSheet.create({
   infoText: {
     flex: 1,
     fontSize: 12.5,
-    color: '#475569',
     lineHeight: 18,
   },
 
@@ -450,11 +625,9 @@ const styles = StyleSheet.create({
   infoRowLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1E293B',
   },
   infoRowSub: {
     fontSize: 12,
-    color: '#94A3B8',
     marginTop: 2,
   },
 

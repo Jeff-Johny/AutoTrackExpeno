@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, FlatList, StyleSheet, ScrollView } from 'react-native';
-import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Menu, Divider, Text, Title, Badge, Appbar, SegmentedButtons } from 'react-native-paper';
+import { View, FlatList, SectionList, StyleSheet, Alert } from 'react-native';
+import { List, FAB, Portal, Modal, TextInput, Button, IconButton, Chip, Divider, Text, Badge, Appbar, SegmentedButtons } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 import { patternService } from '../services/patterns';
 import { smsService } from '../services/sms';
 import { Expense } from '../utils/constants';
+import { useAppTheme } from '../theme/theme';
+import { getCategoryColor } from '../utils/categoryColors';
 
 const TransactionsScreen = ({ navigation }: any) => {
+    const theme = useAppTheme();
     const expenses = useStore((state) => state.expenses);
     const categories = useStore((state) => state.categories);
-    const patterns = useStore((state) => state.patterns);
     const ignoredSms = useStore((state) => state.ignoredSms);
     const unsureQueueCount = useStore((state) => state.unsureDataQueue.length);
     const setUnsureData = useStore((state: any) => state.setUnsureData);
@@ -23,15 +25,6 @@ const TransactionsScreen = ({ navigation }: any) => {
     const [addVisible, setAddVisible] = useState(false);
     const [amount, setAmount] = useState('');
     const [category, setCategory] = useState('');
-    const [menuVisible, setMenuVisible] = useState(false);
-
-    // SMS source detail popup & Editing
-    const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
-    const [isEditingCategory, setIsEditingCategory] = useState(false);
-    const [editMenuVisible, setEditMenuVisible] = useState(false);
-
-    const openMenu = () => setMenuVisible(true);
-    const closeMenu = () => setMenuVisible(false);
 
     const addManual = async () => {
         if (!amount || !category) return;
@@ -57,48 +50,69 @@ const TransactionsScreen = ({ navigation }: any) => {
         }
     };
 
-    const handleUpdateCategory = async (newCategory: string) => {
-        if (selectedExpense) {
-            await expenseService.updateExpense(selectedExpense.id, { category: newCategory });
-            setSelectedExpense({ ...selectedExpense, category: newCategory });
-            setEditMenuVisible(false);
-            setIsEditingCategory(false);
-        }
+    const confirmDeleteExpense = (item: Expense) => {
+        Alert.alert(
+            'Delete transaction?',
+            `Remove ₹${item.amount.toFixed(2)} · ${item.category} from your records. This can't be undone.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => expenseService.deleteExpense(item.id) },
+            ]
+        );
     };
 
-    const ignoredPatterns = patterns.filter(p => p.action === 'ignore');
+    const renderTransactionItem = ({ item }: { item: Expense }) => {
+        const catColor = getCategoryColor(item.category, theme.custom.categoryColors);
+        return (
+            <List.Item
+                title={() => (
+                    <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 14, color: theme.colors.onSurface }}>
+                        ₹{item.amount.toFixed(2)}
+                    </Text>
+                )}
+                description={`${item.category} • ${formatDate(item.date)}`}
+                left={() => (
+                    <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+                        <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: catColor }} />
+                    </View>
+                )}
+                onPress={() => {
+                    // Same global edit modal the Dashboard's day list opens
+                    // (App.tsx) — was a separate, differently-laid-out modal
+                    // here before; this keeps the edit experience identical
+                    // regardless of which screen you tap a transaction from.
+                    setUnsureData({
+                        reviewExpenseId: item.id,
+                        smsText: item.smsText || '',
+                        sender: item.smsSender || '',
+                        aiResult: {
+                            amount: item.amount,
+                            category: item.category,
+                            description: item.description,
+                            payee: null,
+                            isSpending: true,
+                            isCertain: true,
+                        },
+                    });
+                }}
+                right={(props) => (
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <IconButton
+                            icon="delete-outline"
+                            size={20}
+                            onPress={() => confirmDeleteExpense(item)}
+                        />
+                        <List.Icon {...props} icon="chevron-right" />
+                    </View>
+                )}
+            />
+        );
+    };
 
-    const renderTransactionItem = ({ item }: { item: Expense }) => (
-        <List.Item
-            title={`Rs ${item.amount}`}
-            description={`${item.category} • ${formatDate(item.date)}`}
-            left={(props) => (
-                <List.Icon
-                    {...props}
-                    icon={item.smsSender ? "message-text-outline" : "plus-circle-outline"}
-                />
-            )}
-            onPress={() => {
-                setSelectedExpense(item);
-                setIsEditingCategory(false);
-            }}
-            right={(props) => (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <IconButton
-                        icon="delete-outline"
-                        size={20}
-                        onPress={() => expenseService.deleteExpense(item.id)}
-                    />
-                    <List.Icon {...props} icon="chevron-right" />
-                </View>
-            )}
-        />
-    );
-
-    const renderPatternItem = ({ item }: { item: any }) => (
+    const renderPatternRow = (item: any) => (
       <List.Item
           title={item.pattern}
-          description="Tap to unignore and categorize"
+          description="Future SMS from this payee will be ignored"
           left={(props) => <List.Icon {...props} icon="eye-off-outline" />}
           onPress={() => {
             setUnsureData({
@@ -120,17 +134,69 @@ const TransactionsScreen = ({ navigation }: any) => {
                 mode="outlined"
                 onPress={() => patternService.deletePattern(item.id)}
                 compact
+                style={{ alignSelf: 'center', marginRight: 10 }}
               >
-                Remove
+                Remove Rule
               </Button>
           )}
       />
     );
 
+    const renderIgnoredSmsRow = (item: any) => {
+      const unignoreData = {
+        smsText: item.smsText,
+        sender: item.sender,
+        externalSmsId: item.id,
+        date: item.date,
+        aiResult: {
+          amount: item.amount || 0,
+          category: item.category || '',
+          description: item.description || '',
+          payee: item.payee || '',
+          isSpending: true,
+          isCertain: false,
+        },
+        isUnignoringSms: true,
+      };
+      return (
+        <List.Item
+          title={() => (
+            <Text style={{ fontSize: 14, color: theme.colors.onSurface }}>
+              {item.amount > 0 ? (
+                <><Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600' }}>₹{item.amount}</Text> ({item.payee || item.sender})</>
+              ) : item.sender}
+            </Text>
+          )}
+          description={`${item.smsText}\n${formatDate(item.date)}`}
+          descriptionNumberOfLines={3}
+          left={(props) => <List.Icon {...props} icon="message-text-outline" />}
+          onPress={() => setUnsureData(unignoreData)}
+          right={() => (
+            <Button
+              mode="outlined"
+              onPress={() => setUnsureData(unignoreData)}
+              compact
+              style={{ alignSelf: 'center', marginRight: 10 }}
+            >
+              Categorize
+            </Button>
+          )}
+        />
+      );
+    };
+
+    // "Ignored Payee Rules" hidden for now (per-payee ignore rules exist and
+    // still work — created from the confirm modal's Ignore action — just not
+    // shown/manageable here yet; renderPatternRow is kept below so this is a
+    // one-line re-add, not a rebuild, once that UI is designed properly).
+    const ignoredSections = [
+      { key: 'sms', title: 'Ignored Transactions (SMS)', emptyText: 'No ignored messages found.', data: ignoredSms },
+    ];
+
     return (
-        <View style={styles.container}>
-            <Appbar.Header>
-                <Appbar.Content title="Activity" />
+        <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+            <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
+                <Appbar.Content title="Activity" titleStyle={{ color: theme.colors.onSurface }} />
                 <View>
                     <Appbar.Action 
                         icon="bell-outline" 
@@ -164,238 +230,68 @@ const TransactionsScreen = ({ navigation }: any) => {
                   keyExtractor={(item) => item.id}
                   renderItem={renderTransactionItem}
                   ItemSeparatorComponent={() => <Divider />}
-                  ListEmptyComponent={<Text style={styles.emptyText}>No transactions found.</Text>}
+                  ListEmptyComponent={<Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>No transactions found.</Text>}
               />
             ) : (
-              <ScrollView style={{ flex: 1 }}>
-                <List.Subheader style={{ fontWeight: 'bold', color: '#6750A4' }}>Ignored Payee Rules</List.Subheader>
-                {ignoredPatterns.length > 0 ? (
-                  ignoredPatterns.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <List.Item
-                        title={item.pattern}
-                        description="Future SMS from this payee will be ignored"
-                        left={(props) => <List.Icon {...props} icon="eye-off-outline" />}
-                        onPress={() => {
-                          setUnsureData({
-                            unignorePatternId: item.id,
-                            smsText: '',
-                            sender: '',
-                            aiResult: {
-                              amount: 0,
-                              category: '',
-                              description: `Unignored: ${item.pattern}`,
-                              payee: item.pattern,
-                              isSpending: true,
-                              isCertain: false,
-                            },
-                          });
-                        }}
-                        right={() => (
-                          <Button
-                            mode="outlined"
-                            onPress={() => patternService.deletePattern(item.id)}
-                            compact
-                            style={{ alignSelf: 'center', marginRight: 10 }}
-                          >
-                            Remove Rule
-                          </Button>
-                        )}
-                      />
-                      <Divider />
-                    </React.Fragment>
-                  ))
-                ) : (
-                  <Text style={styles.emptySubText}>No ignored payee rules defined.</Text>
+              // Virtualized (SectionList), not a ScrollView+map — "ignored"
+              // covers every pre-filtered OTP/promo SMS ever seen and can
+              // grow into the hundreds, which was rendering every row's
+              // full view tree up front and making this tab slow to open.
+              <SectionList
+                sections={ignoredSections}
+                keyExtractor={(item, index) => item.id ?? index.toString()}
+                renderSectionHeader={({ section }) => (
+                  <List.Subheader style={{ fontWeight: 'bold', color: theme.colors.primary, backgroundColor: theme.colors.background }}>
+                    {section.title}
+                  </List.Subheader>
                 )}
-
-                <List.Subheader style={{ fontWeight: 'bold', color: '#6750A4', marginTop: 15 }}>Ignored Transactions (SMS)</List.Subheader>
-                {ignoredSms.length > 0 ? (
-                  ignoredSms.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <List.Item
-                        title={item.amount > 0 ? `₹${item.amount} (${item.payee || item.sender})` : `${item.sender}`}
-                        description={`${item.smsText}\n${formatDate(item.date)}`}
-                        descriptionNumberOfLines={3}
-                        left={(props) => <List.Icon {...props} icon="message-text-outline" />}
-                        onPress={() => {
-                          setUnsureData({
-                            smsText: item.smsText,
-                            sender: item.sender,
-                            externalSmsId: item.id,
-                            date: item.date,
-                            aiResult: {
-                              amount: item.amount || 0,
-                              category: item.category || '',
-                              description: item.description || '',
-                              payee: item.payee || '',
-                              isSpending: true,
-                              isCertain: false,
-                            },
-                            isUnignoringSms: true
-                          });
-                        }}
-                        right={() => (
-                          <Button
-                            mode="outlined"
-                            onPress={() => {
-                              setUnsureData({
-                                smsText: item.smsText,
-                                sender: item.sender,
-                                externalSmsId: item.id,
-                                date: item.date,
-                                aiResult: {
-                                  amount: item.amount || 0,
-                                  category: item.category || '',
-                                  description: item.description || '',
-                                  payee: item.payee || '',
-                                  isSpending: true,
-                                  isCertain: false,
-                                },
-                                isUnignoringSms: true
-                              });
-                            }}
-                            compact
-                            style={{ alignSelf: 'center', marginRight: 10 }}
-                          >
-                            Categorize
-                          </Button>
-                        )}
-                      />
-                      <Divider />
-                    </React.Fragment>
-                  ))
-                ) : (
-                  <Text style={styles.emptySubText}>No ignored messages found.</Text>
+                renderItem={({ item, section }) => (
+                  section.key === 'patterns' ? renderPatternRow(item) : renderIgnoredSmsRow(item)
                 )}
-              </ScrollView>
+                renderSectionFooter={({ section }) =>
+                  section.data.length === 0 ? (
+                    <Text style={[styles.emptySubText, { color: theme.colors.onSurfaceVariant }]}>{section.emptyText}</Text>
+                  ) : null
+                }
+                ItemSeparatorComponent={() => <Divider />}
+                stickySectionHeadersEnabled={false}
+              />
             )}
-
-            {/* SMS Source Detail Popup */}
-            <Portal>
-                <Modal
-                    visible={!!selectedExpense}
-                    onDismiss={() => {
-                      setSelectedExpense(null);
-                      setEditMenuVisible(false);
-                    }}
-                    contentContainerStyle={styles.modalContent}
-                >
-                    <Title style={styles.modalTitle}>Transaction Details</Title>
-
-                    {/* Highlighted Amount Section */}
-                    <View style={styles.highlightedSection}>
-                        <Text style={styles.highlightLabel}>Amount Spent</Text>
-                        <Text style={styles.highlightedAmount}>₹{selectedExpense?.amount}</Text>
-                    </View>
-
-                    {/* Highlighted Date & Time Section */}
-                    <View style={styles.highlightedDateSection}>
-                        <View style={styles.dateTimeHeader}>
-                            <Text style={styles.dateIcon}>📅</Text>
-                            <Text style={styles.dateLabel}>Date & Time</Text>
-                        </View>
-                        <Text style={styles.dateValue}>{selectedExpense ? formatDate(selectedExpense.date) : ''}</Text>
-                    </View>
-
-                    <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Category</Text>
-                        <View style={styles.categoryRow}>
-                          <Text style={styles.categoryValue}>{selectedExpense?.category}</Text>
-                          <Menu
-                            visible={editMenuVisible}
-                            onDismiss={() => setEditMenuVisible(false)}
-                            anchor={
-                              <IconButton
-                                icon="pencil-outline"
-                                size={16}
-                                onPress={() => setEditMenuVisible(true)}
-                              />
-                            }
-                          >
-                            <ScrollView style={{ maxHeight: 200 }}>
-                              {categories.map((cat) => (
-                                <Menu.Item
-                                  key={cat.category}
-                                  onPress={() => handleUpdateCategory(cat.category)}
-                                  title={cat.category}
-                                />
-                              ))}
-                            </ScrollView>
-                          </Menu>
-                        </View>
-                    </View>
-                    <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>From</Text>
-                        <Text style={styles.detailValue}>{selectedExpense?.smsSender || '(manual entry)'}</Text>
-                    </View>
-
-                    {selectedExpense?.smsText ? (
-                        <View style={styles.smsBox}>
-                            <Text style={styles.smsLabel}>Original SMS</Text>
-                            <ScrollView style={{ maxHeight: 100 }}>
-                                <Text style={styles.smsText}>{selectedExpense.smsText}</Text>
-                            </ScrollView>
-                        </View>
-                    ) : (
-                        <View style={styles.smsBox}>
-                            <Text style={styles.smsLabel}>Original SMS</Text>
-                            <Text style={[styles.smsText, { color: '#999', fontStyle: 'italic' }]}>
-                                No SMS text recorded (manually added or older entry)
-                            </Text>
-                        </View>
-                    )}
-
-                    <Button
-                        mode="contained"
-                        onPress={() => setSelectedExpense(null)}
-                        style={{ marginTop: 16 }}
-                    >
-                        Close
-                    </Button>
-                </Modal>
-            </Portal>
 
             {/* Add Manual Expense Modal */}
             <Portal>
-                <Modal visible={addVisible} onDismiss={() => setAddVisible(false)} contentContainerStyle={styles.modalContent}>
+                <Modal visible={addVisible} onDismiss={() => setAddVisible(false)} contentContainerStyle={[styles.modalContent, { backgroundColor: theme.colors.surface }]}>
                     <TextInput
                         label="Amount"
                         value={amount}
                         onChangeText={setAmount}
                         keyboardType="numeric"
                         mode="outlined"
-                        style={styles.input}
+                        style={[styles.input, { fontFamily: theme.custom.ledgerFont }]}
                     />
 
-                    <View style={styles.dropdownContainer}>
-                        <Menu
-                            visible={menuVisible}
-                            onDismiss={closeMenu}
-                            anchor={
-                                <Button
-                                    mode="outlined"
-                                    onPress={openMenu}
-                                    style={styles.dropdownButton}
-                                    contentStyle={styles.dropdownContent}
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.onSurfaceVariant, marginBottom: 6 }}>Category</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                        {categories.map((cat) => {
+                            const catColor = getCategoryColor(cat.category, theme.custom.categoryColors);
+                            const isSelected = category === cat.category;
+                            return (
+                                <Chip
+                                    key={cat.category}
+                                    onPress={() => setCategory(cat.category)}
+                                    style={{
+                                        backgroundColor: isSelected ? catColor + '26' : theme.colors.surfaceVariant,
+                                        borderWidth: isSelected ? 1.4 : 0,
+                                        borderColor: catColor,
+                                    }}
+                                    textStyle={{ color: isSelected ? catColor : theme.colors.onSurfaceVariant, fontWeight: isSelected ? '700' : '500', fontSize: 11 }}
+                                    avatar={<View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: catColor }} />}
+                                    compact
                                 >
-                                    {category || 'Select Category'}
-                                </Button>
-                            }
-                        >
-                            <ScrollView style={{ maxHeight: 200 }}>
-                              {categories.map((cat) => (
-                                  <Menu.Item
-                                      key={cat.category}
-                                      onPress={() => {
-                                          setCategory(cat.category);
-                                          closeMenu();
-                                      }}
-                                      title={cat.category}
-                                  />
-                              ))}
-                            </ScrollView>
-                        </Menu>
+                                    {cat.category}
+                                </Chip>
+                            );
+                        })}
                     </View>
 
                     <Button
@@ -444,118 +340,8 @@ const styles = StyleSheet.create({
         margin: 20,
         borderRadius: 8,
     },
-    modalTitle: {
-        marginBottom: 20,
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    highlightedSection: {
-        backgroundColor: '#F3E5F5',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        borderLeftWidth: 4,
-        borderLeftColor: '#6750A4',
-    },
-    highlightLabel: {
-        color: '#888',
-        fontSize: 12,
-        marginBottom: 8,
-        fontWeight: '500',
-        textTransform: 'uppercase',
-    },
-    highlightedAmount: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#6750A4',
-    },
-    highlightedDateSection: {
-        backgroundColor: '#E8F5E9',
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 16,
-        borderLeftWidth: 4,
-        borderLeftColor: '#2E7D32',
-    },
-    dateTimeHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-    dateIcon: {
-        fontSize: 16,
-        marginRight: 8,
-    },
-    dateLabel: {
-        color: '#666',
-        fontSize: 12,
-        fontWeight: '500',
-        textTransform: 'uppercase',
-    },
-    dateValue: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#1B5E20',
-        marginLeft: 24,
-    },
-    categoryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    categoryValue: {
-        fontWeight: '600',
-        textAlign: 'right',
-        marginRight: 8,
-    },
-    detailRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-        minHeight: 40,
-    },
-    detailLabel: {
-        color: '#888',
-        fontSize: 13,
-        flex: 1,
-    },
-    detailValue: {
-        fontWeight: '600',
-        textAlign: 'right',
-    },
-    smsBox: {
-        backgroundColor: '#f5f5f5',
-        borderRadius: 6,
-        padding: 12,
-        marginTop: 12,
-    },
-    smsLabel: {
-        fontSize: 12,
-        color: '#888',
-        marginBottom: 6,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-    },
-    smsText: {
-        fontSize: 13,
-        lineHeight: 20,
-        color: '#333',
-    },
     input: {
         marginBottom: 10,
-    },
-    dropdownContainer: {
-        marginBottom: 10,
-    },
-    dropdownButton: {
-        width: '100%',
-        height: 50,
-        justifyContent: 'center',
-    },
-    dropdownContent: {
-        height: 50,
-        flexDirection: 'row-reverse',
-        justifyContent: 'center',
     },
     addButton: {
         marginTop: 10,

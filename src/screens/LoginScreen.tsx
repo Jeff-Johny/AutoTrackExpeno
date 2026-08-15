@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import { TextInput, Button, Title, Card, Text } from 'react-native-paper';
+import { useAppTheme } from '../theme/theme';
 
 const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
+    const theme = useAppTheme();
     const [pin, setPin] = useState('');
     const [error, setError] = useState('');
 
@@ -15,9 +17,9 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
     };
 
     return (
-        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: '#f3edf7' }}>
-            <Card style={{ padding: 20 }}>
-                <Title style={{ textAlign: 'center', marginBottom: 20 }}>AutoTrackExpeno Login</Title>
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: theme.colors.background }}>
+            <Card style={{ padding: 20, backgroundColor: theme.colors.surface }}>
+                <Title style={{ textAlign: 'center', marginBottom: 20, color: theme.colors.onSurface }}>AutoTrackExpeno Login</Title>
                 <TextInput
                     label="Enter 4-digit PIN"
                     value={pin}
@@ -26,7 +28,7 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
                     keyboardType="numeric"
                     maxLength={4}
                 />
-                {error ? <Text style={{ color: 'red', marginTop: 10 }}>{error}</Text> : null}
+                {error ? <Text style={{ color: theme.custom.critical, marginTop: 10 }}>{error}</Text> : null}
                 <Button mode="contained" onPress={handleLogin} style={{ marginTop: 20 }}>
                     Login
                 </Button>
