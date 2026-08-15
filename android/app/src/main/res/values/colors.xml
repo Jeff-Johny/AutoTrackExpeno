@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="white">#FFFFFF</color>
+    <!-- Ledger Ink brand — adaptive icon background -->
+    <color name="ic_launcher_background">#4B3FA0</color>
 </resources>

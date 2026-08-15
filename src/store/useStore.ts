@@ -21,9 +21,12 @@ interface AppState {
     setUnsureData: (data: any | null) => void;
     setUnsureDataQueue: (queue: any[]) => void;
     removeFromUnsureQueue: (index: number) => void;
+    addToUnsureQueue: (data: any) => void;
     setIgnoredSms: (ignoredSms: any[]) => void;
     syncStatus: 'idle' | 'syncing' | 'completed';
     setSyncStatus: (status: 'idle' | 'syncing' | 'completed') => void;
+    themePreference: 'light' | 'dark' | 'system';
+    setThemePreference: (preference: 'light' | 'dark' | 'system') => void;
 }
 export const useStore = create<AppState>((set) => ({
     expenses: [],
@@ -89,10 +92,19 @@ export const useStore = create<AppState>((set) => ({
         newQueue.splice(index, 1);
         return { unsureDataQueue: newQueue };
     }),
+    addToUnsureQueue: (data) => set((state) => {
+        if (!state.unsureData) {
+            return { unsureData: data, unsureDataQueue: state.unsureDataQueue };
+        } else {
+            return { unsureDataQueue: [...state.unsureDataQueue, data] };
+        }
+    }),
     setIgnoredSms: (ignoredSms) => set({ ignoredSms }),
     deletePattern: (id: string) => set((state) => ({
         patterns: state.patterns.filter((p) => p.id !== id),
     })),
     syncStatus: 'idle',
     setSyncStatus: (status) => set({ syncStatus: status }),
+    themePreference: 'system',
+    setThemePreference: (preference) => set({ themePreference: preference }),
 }));

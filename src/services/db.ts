@@ -81,11 +81,38 @@ class DatabaseService {
             category TEXT,
             description TEXT,
             is_spending INTEGER,
-            status TEXT
+            status TEXT,
+            source TEXT,
+            transaction_hash TEXT
           );
         `);
       console.log('DB: sms_transactions table checked');
 
+      // Migration: add source and transaction_hash columns if they don't exist
+      try {
+        this.db.execute('ALTER TABLE sms_transactions ADD COLUMN source TEXT DEFAULT "sms"');
+        console.log('DB: source column added to sms_transactions (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
+
+      try {
+        this.db.execute('ALTER TABLE sms_transactions ADD COLUMN transaction_hash TEXT');
+        console.log('DB: transaction_hash column added to sms_transactions (migration)');
+      } catch (_) {
+        // Column already exists, ignore
+      }
+
+      // sms_transactions accumulates every SMS/email ever processed —
+      // including every pre-filtered OTP/promo (status='system_ignored'),
+      // which never gets pruned and can grow into the thousands over time.
+      // The pending/ignored screens filter and sort by (status, date) on
+      // every load, so this index keeps that from becoming a full table
+      // scan as the table grows.
+      this.db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sms_transactions_status_date ON sms_transactions(status, date DESC)'
+      );
+      console.log('DB: sms_transactions status/date index checked');
 
       // Initialize default categories
       const categories = [
@@ -141,6 +168,56 @@ class DatabaseService {
     }
   }
 
+  /** 'light' | 'dark' | 'system' — user's manual override, independent of the OS setting. */
+  async getThemePreference(): Promise<'light' | 'dark' | 'system' | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute('SELECT value FROM settings WHERE key = ?', ['theme_preference']);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return rows[0].value as 'light' | 'dark' | 'system';
+      }
+      return null;
+    } catch (error) {
+      console.error('DB: Failed to get theme preference', error);
+      return null;
+    }
+  }
+
+  async setThemePreference(preference: 'light' | 'dark' | 'system') {
+    try {
+      const db = this.getDb();
+      db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['theme_preference', preference]);
+    } catch (error) {
+      console.error('DB: Failed to set theme preference', error);
+    }
+  }
+
+  /** Daily reminder to review pending categorizations — hour/minute in 24h local time. */
+  async getReminderSettings(): Promise<{ enabled: boolean; hour: number; minute: number } | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute('SELECT value FROM settings WHERE key = ?', ['reminder_settings']);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return JSON.parse(rows[0].value);
+      }
+      return null;
+    } catch (error) {
+      console.error('DB: Failed to get reminder settings', error);
+      return null;
+    }
+  }
+
+  async setReminderSettings(settings: { enabled: boolean; hour: number; minute: number }) {
+    try {
+      const db = this.getDb();
+      db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['reminder_settings', JSON.stringify(settings)]);
+    } catch (error) {
+      console.error('DB: Failed to set reminder settings', error);
+    }
+  }
+
   async saveSmsTransaction(tx: {
     smsId: string;
     sender: string;
@@ -152,11 +229,16 @@ class DatabaseService {
     description: string | null;
     isSpending: boolean;
     status: 'pending' | 'confirmed' | 'user_ignored' | 'system_ignored';
+    source?: 'sms' | 'email';
+    transactionHash?: string;
   }) {
     try {
       const db = this.getDb();
+      const source = tx.source || 'sms';
+      const transactionHash = tx.transactionHash || `${source}_${tx.date}_${tx.amount}`;
+
       db.execute(
-        'INSERT OR REPLACE INTO sms_transactions (sms_id, sender, sms_text, date, amount, payee, category, description, is_spending, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO sms_transactions (sms_id, sender, sms_text, date, amount, payee, category, description, is_spending, status, source, transaction_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
           tx.smsId,
           tx.sender,
@@ -168,6 +250,8 @@ class DatabaseService {
           tx.description || '',
           tx.isSpending ? 1 : 0,
           tx.status,
+          source,
+          transactionHash,
         ]
       );
     } catch (e) {
@@ -195,10 +279,20 @@ class DatabaseService {
     }
   }
 
-  async getIgnoredSmsTransactions(): Promise<any[]> {
+  /**
+   * `system_ignored` covers every pre-filtered OTP/promo SMS ever seen and
+   * is never pruned, so this can grow into the thousands over months of
+   * use — capped to the most recent `limit` so the Ignored tab (and the
+   * query itself) stays fast. This is a display cap only; nothing is
+   * deleted, and confirmed/pending transactions are unaffected.
+   */
+  async getIgnoredSmsTransactions(limit: number = 300): Promise<any[]> {
     try {
       const db = this.getDb();
-      const result = db.execute("SELECT * FROM sms_transactions WHERE status IN ('user_ignored', 'system_ignored') ORDER BY date DESC");
+      const result = db.execute(
+        "SELECT * FROM sms_transactions WHERE status IN ('user_ignored', 'system_ignored') ORDER BY date DESC LIMIT ?",
+        [limit]
+      );
       return result.rows?._array || [];
     } catch (e) {
       console.error('DB: Failed to get ignored SMS transactions', e);
@@ -217,6 +311,21 @@ class DatabaseService {
       return null;
     } catch (e) {
       console.error('DB: Failed to get SMS transaction', e);
+      return null;
+    }
+  }
+
+  async getTransactionByHash(transactionHash: string): Promise<any | null> {
+    try {
+      const db = this.getDb();
+      const result = db.execute("SELECT * FROM sms_transactions WHERE transaction_hash = ?", [transactionHash]);
+      const rows = result.rows?._array;
+      if (rows && rows.length > 0) {
+        return rows[0];
+      }
+      return null;
+    } catch (e) {
+      console.error('DB: Failed to get transaction by hash', e);
       return null;
     }
   }

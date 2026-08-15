@@ -4,6 +4,13 @@
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Needed for the daily reminder notification: react-native-push-notification's
+         localNotificationSchedule always calls AlarmManager.setExact*() under the hood.
+         On API 31 (S) this is install-time granted just by declaring it; on API 33+ it's
+         a user-toggled special access (Settings > Alarms & reminders) — see
+         SettingsScreen's reminder toggle, which sends the user there before scheduling
+         if it isn't granted yet. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <application
       android:name=".MainApplication"

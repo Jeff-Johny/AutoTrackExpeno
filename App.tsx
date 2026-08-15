@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Provider as PaperProvider, Portal, Modal, Button, Text, Title, TextInput, ProgressBar, Snackbar } from 'react-native-paper';
-import { View, Dimensions } from 'react-native';
+import { Provider as PaperProvider, Portal, Modal, Button, Text, Title, TextInput, ProgressBar, Snackbar, Chip } from 'react-native-paper';
+import { View, Dimensions, LogBox, useColorScheme } from 'react-native';
+
+// Suppress React 19 strict Fragment prop warning from react-native-screens internals.
+// This is a known incompatibility (react-native-screens <= 4.19) and does NOT affect functionality.
+LogBox.ignoreLogs([
+  "Invalid prop `index` supplied to `React.Fragment`",
+  "Invalid prop `%s` supplied to `React.Fragment`",
+]);
 import MainNavigator from './src/navigation/MainNavigator';
-import { theme } from './src/theme/theme';
+import { lightTheme, darkTheme } from './src/theme/theme';
+import { getCategoryColor } from './src/utils/categoryColors';
 import { dbService } from './src/services/db';
 import { smsService } from './src/services/sms';
 import { patternService } from './src/services/patterns';
@@ -12,7 +20,49 @@ import LoginScreen from './src/screens/LoginScreen';
 import { notificationService } from './src/services/notifications';
 import { useStore } from './src/store/useStore';
 
+const formatFriendlyDate = (dateValue: string | number) => {
+  if (!dateValue) return 'Date Unknown';
+  
+  let parsed = dateValue;
+  if (typeof dateValue === 'string' && /^\d+$/.test(dateValue)) {
+    parsed = parseInt(dateValue, 10);
+  }
+  
+  const date = new Date(parsed);
+  if (isNaN(date.getTime())) return 'Date Unknown';
+
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const isToday = date.getDate() === today.getDate() &&
+                  date.getMonth() === today.getMonth() &&
+                  date.getFullYear() === today.getFullYear();
+                  
+  const isYesterday = date.getDate() === yesterday.getDate() &&
+                      date.getMonth() === yesterday.getMonth() &&
+                      date.getFullYear() === yesterday.getFullYear();
+
+  try {
+    if (isToday) {
+      return `Today, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (isYesterday) {
+      return `Yesterday, ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return date.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return 'Date Unknown';
+  }
+};
+
 const App = () => {
+  const scheme = useColorScheme();
+  const themePreference = useStore((state) => state.themePreference);
+  // 'system' follows the OS; 'light'/'dark' is a manual override that wins
+  // regardless of the OS setting (set from Settings, persisted in the DB).
+  const isDark = themePreference === 'system' ? scheme === 'dark' : themePreference === 'dark';
+  const theme = isDark ? darkTheme : lightTheme;
   const [isLoggedIn, setIsLoggedIn] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const unsureData = useStore((state: any) => state.unsureData);
@@ -27,8 +77,7 @@ const App = () => {
 
   useEffect(() => {
     if (unsureData && unsureData.aiResult) {
-      // Prefer suggestedCategory from learned pattern, fallback to AI suggestion
-      setSelectedCategory(unsureData.suggestedCategory || unsureData.aiResult.category || '');
+      setSelectedCategory(unsureData.aiResult.category || '');
       setInputAmount(unsureData.aiResult.amount ? unsureData.aiResult.amount.toString() : '');
     }
   }, [unsureData]);
@@ -42,6 +91,12 @@ const App = () => {
         console.error('[App] Database init failed - stopping setup', e);
         return;
       }
+
+      const savedThemePreference = await dbService.getThemePreference();
+      if (savedThemePreference) {
+        useStore.getState().setThemePreference(savedThemePreference);
+      }
+
       await patternService.fetchAll();
       await expenseService.fetchAll();
       await expenseService.fetchCategories();
@@ -69,7 +124,6 @@ const App = () => {
         console.log('[App] handleUnsure triggered with data:', data);
         if (data && data.aiResult) {
           setUnsureData(data);
-          setSelectedCategory(data.aiResult.category || '');
         }
       };
 
@@ -118,6 +172,20 @@ const App = () => {
           handleUnsure(data);
         }
       });
+
+      // Re-arm the daily review reminder on every launch. This is a no-op
+      // if the user has never enabled it, and cheap to repeat if they have
+      // — it's how the alarm gets rebuilt after an app update (Android
+      // reboot survival is instead handled natively by the push library's
+      // own BOOT_COMPLETED receiver).
+      try {
+        const reminderSettings = await dbService.getReminderSettings();
+        if (reminderSettings?.enabled) {
+          notificationService.scheduleDailyReminder(reminderSettings.hour, reminderSettings.minute);
+        }
+      } catch (e) {
+        console.error('[App] Failed to re-arm daily reminder:', e);
+      }
 
       console.log('[App] Requesting SMS permissions...');
       const hasPermission = await smsService.requestPermissions();
@@ -201,24 +269,22 @@ const App = () => {
     setUnsureData(null);
   };
 
-  const handleIgnore = async () => {
-    console.log('[App] handleIgnore called');
+  const handleCancel = async () => {
+    console.log('[App] handleCancel called');
     if (!unsureData) {
       console.warn('[App] No unsureData available');
       return;
     }
-    const payee = unsureData.aiResult.payee;
-    if (payee) {
-      console.log('[App] Adding ignore pattern for payee:', payee);
-      await patternService.addPattern(payee, 'ignore');
-    }
-    
+
+    // Skip this one transaction only — unlike an ignore pattern, this does
+    // NOT teach the app to block future messages from this payee. That
+    // heavier action is still available per-item from Pending Transactions.
     if (unsureData.externalSmsId) {
       await dbService.updateSmsTransactionStatus(unsureData.externalSmsId, 'user_ignored');
       await smsService.fetchIgnoredSms();
     }
-    
-    console.log('[App] Pattern ignored, closing popup');
+
+    console.log('[App] Cancelled, closing popup');
     setUnsureData(null);
   };
 
@@ -239,28 +305,54 @@ const App = () => {
       {syncStatus === 'syncing' && (
         <ProgressBar indeterminate color={theme.colors.primary} style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999, height: 4 }} />
       )}
-      <MainNavigator />
+      <MainNavigator isDark={isDark} theme={theme} />
 
       <Portal>
         <Modal
           visible={!!unsureData}
           onDismiss={() => setUnsureData(null)}
-          contentContainerStyle={{ padding: 25, backgroundColor: 'white', margin: 20, borderRadius: 10 }}
+          contentContainerStyle={{ padding: 22, backgroundColor: theme.colors.surface, margin: 20, borderRadius: 22 }}
         >
-          <Title>
-            {unsureData?.reviewExpenseId
-              ? 'Edit Expense'
-              : unsureData?.unignorePatternId
-              ? 'Unignore & Categorize'
-              : 'Confirm Expense'}
-          </Title>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Title style={{ color: theme.colors.onSurface }}>
+              {unsureData?.reviewExpenseId
+                ? 'Edit Expense'
+                : unsureData?.unignorePatternId
+                ? 'Unignore & Categorize'
+                : 'Confirm Expense'}
+            </Title>
+            {unsureData?.aiResult?.usedAI ? (
+              <Chip
+                icon="creation"
+                compact
+                style={{ backgroundColor: theme.custom.accentTint }}
+                textStyle={{ color: theme.custom.accentInk, fontSize: 11 }}
+              >
+                AI-assisted
+              </Chip>
+            ) : null}
+          </View>
           {unsureData?.smsText ? (
-            <Text style={{ marginBottom: 10 }}>{unsureData.smsText}</Text>
+            <Text
+              style={{
+                marginBottom: 10, marginTop: 6, padding: 10, borderRadius: 10,
+                backgroundColor: theme.colors.surfaceVariant, color: theme.colors.onSurfaceVariant,
+                fontFamily: theme.custom.ledgerFont, fontSize: 12, lineHeight: 18,
+              }}
+            >
+              {unsureData.smsText}
+            </Text>
           ) : null}
           {!unsureData?.reviewExpenseId && (
-            <Text style={{ color: 'gray', marginBottom: 5 }}>
-              {unsureData?.date ? new Date(unsureData.date).toLocaleString() : 'Date Unknown'}
-            </Text>
+            <View style={{ marginBottom: 10 }}>
+              <Chip
+                icon="calendar"
+                style={{ backgroundColor: theme.colors.surfaceVariant, alignSelf: 'flex-start' }}
+                textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
+              >
+                {formatFriendlyDate(unsureData?.date)}
+              </Chip>
+            </View>
           )}
           <TextInput
             label="Amount (₹)"
@@ -268,34 +360,52 @@ const App = () => {
             onChangeText={setInputAmount}
             keyboardType="numeric"
             mode="outlined"
-            style={{ marginBottom: 10, marginTop: 5 }}
+            style={{ marginBottom: 10, marginTop: 5, fontFamily: theme.custom.ledgerFont, fontSize: 20 }}
           />
           {unsureData?.aiResult?.payee ? (
-            <Text style={{ color: '#555', marginBottom: 4 }}>Payee: {unsureData.aiResult.payee}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <Text style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}>Payee:</Text>
+              <Chip
+                icon="store"
+                style={{ backgroundColor: theme.colors.surfaceVariant }}
+                textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
+              >
+                {unsureData.aiResult.payee}
+              </Chip>
+            </View>
           ) : null}
 
-          <Title style={{ fontSize: 16, marginTop: 10 }}>Select Category</Title>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
-            {categories.map((cat: any) => (
-              <Button
-                key={cat.category}
-                mode={selectedCategory === cat.category ? 'contained' : 'outlined'}
-                onPress={() => setSelectedCategory(cat.category)}
-                style={{ margin: 2 }}
-                labelStyle={{ fontSize: 10 }}
-              >
-                {cat.category}
-              </Button>
-            ))}
+          <Title style={{ fontSize: 16, marginTop: 10, color: theme.colors.onSurface }}>Select Category</Title>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10, marginTop: 6 }}>
+            {categories.map((cat: any) => {
+              const catColor = getCategoryColor(cat.category, theme.custom.categoryColors);
+              const isSelected = selectedCategory === cat.category;
+              return (
+                <Chip
+                  key={cat.category}
+                  onPress={() => setSelectedCategory(cat.category)}
+                  style={{
+                    backgroundColor: isSelected ? catColor + '26' : theme.colors.surfaceVariant,
+                    borderWidth: isSelected ? 1.4 : 0,
+                    borderColor: catColor,
+                  }}
+                  textStyle={{ color: isSelected ? catColor : theme.colors.onSurfaceVariant, fontWeight: isSelected ? '700' : '500', fontSize: 11 }}
+                  avatar={<View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: catColor }} />}
+                  compact
+                >
+                  {cat.category}
+                </Chip>
+              );
+            })}
           </View>
 
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-            {!unsureData?.reviewExpenseId && !unsureData?.unignorePatternId && (
-              <Button onPress={handleIgnore} textColor="grey">Ignore Pattern</Button>
-            )}
-            {(unsureData?.reviewExpenseId || unsureData?.unignorePatternId) && (
-              <Button onPress={() => setUnsureData(null)} textColor="grey">Cancel</Button>
-            )}
+            <Button
+              onPress={unsureData?.reviewExpenseId || unsureData?.unignorePatternId ? () => setUnsureData(null) : handleCancel}
+              textColor={theme.colors.onSurfaceVariant}
+            >
+              Cancel
+            </Button>
             <Button mode="contained" onPress={handleConfirm}>
               {unsureData?.reviewExpenseId ? 'Update' : 'Confirm Spend'}
             </Button>
@@ -305,19 +415,35 @@ const App = () => {
         <Modal
           visible={!!autoTrackedSummary}
           onDismiss={() => setAutoTrackedSummary(null)}
-          contentContainerStyle={{ padding: 25, backgroundColor: 'white', margin: 20, borderRadius: 10, maxHeight: Dimensions.get('window').height * 0.8 }}
+          contentContainerStyle={{ padding: 22, backgroundColor: theme.colors.surface, margin: 20, borderRadius: 22, maxHeight: Dimensions.get('window').height * 0.8 }}
         >
-          <Title>Auto-Tracked Summary</Title>
-          <Text style={{ marginBottom: 15, color: '#666' }}>
+          <Title style={{ color: theme.colors.onSurface }}>Auto-Tracked Summary</Title>
+          <Text style={{ marginBottom: 15, color: theme.colors.onSurfaceVariant }}>
             While you were away, {autoTrackedSummary?.length} expenses were automatically categorized based on your learned patterns.
           </Text>
          <View style={{ marginBottom: 20 }}>
-            {autoTrackedSummary?.map((item: any, index: number) => (
-              <View key={index} style={{ marginBottom: 10, paddingBottom: 10, borderBottomWidth: index === autoTrackedSummary.length - 1 ? 0 : 1, borderBottomColor: '#eee' }}>
-                <Text style={{ fontWeight: 'bold' }}>₹{item.aiResult.amount} - {item.categoryAssigned}</Text>
-                <Text numberOfLines={1} style={{ color: '#666' }}>{item.smsText}</Text>
-              </View>
-            ))}
+            {autoTrackedSummary?.map((item: any, index: number) => {
+              const catColor = getCategoryColor(item.categoryAssigned, theme.custom.categoryColors);
+              return (
+                <View
+                  key={index}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10,
+                    marginBottom: 10, paddingBottom: 10,
+                    borderBottomWidth: index === autoTrackedSummary.length - 1 ? 0 : 1,
+                    borderBottomColor: theme.colors.surfaceVariant,
+                  }}
+                >
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: catColor }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: 'bold', color: theme.colors.onSurface }}>
+                      ₹{item.aiResult.amount} · {item.categoryAssigned}
+                    </Text>
+                    <Text numberOfLines={1} style={{ color: theme.colors.onSurfaceVariant, fontSize: 12 }}>{item.smsText}</Text>
+                  </View>
+                </View>
+              );
+            })}
           </View>
           <Button mode="contained" onPress={() => setAutoTrackedSummary(null)}>Dismiss</Button>
         </Modal>
@@ -326,7 +452,7 @@ const App = () => {
           visible={syncStatus === 'syncing'}
           onDismiss={() => {}}
           duration={Infinity}
-          style={{ backgroundColor: '#333' }}
+          style={{ backgroundColor: theme.colors.inverseSurface }}
         >
           Syncing recent transactions...
         </Snackbar>
