@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-AutoTrackExpeno is a bare React Native 0.83 **Android-only** app that auto-tracks expenses by
-reading bank/UPI SMS, sending the message text to an AI (DeepSeek) for categorization, and letting
-the user confirm/ignore the detected spend with one tap.
+TapTrack (repo/package name is still `AutoTrackExpeno` — only the user-facing app name changed) is
+a bare React Native 0.83 **Android-only** app that auto-tracks expenses by reading bank/UPI SMS,
+sending the message text to an AI (DeepSeek) for categorization, and letting the user
+confirm/ignore the detected spend with one tap.
 Core functionality (SMS listener, `PermissionsAndroid` SMS scopes) has no iOS equivalent — don't add
 iOS-specific code paths without checking with the user first, and don't treat `Platform.OS !== 'android'`
 early-returns as bugs.

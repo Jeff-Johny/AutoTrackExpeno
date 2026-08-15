@@ -19,7 +19,7 @@ const LoginScreen = ({ onLogin }: { onLogin: () => void }) => {
     return (
         <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: theme.colors.background }}>
             <Card style={{ padding: 20, backgroundColor: theme.colors.surface }}>
-                <Title style={{ textAlign: 'center', marginBottom: 20, color: theme.colors.onSurface }}>AutoTrackExpeno Login</Title>
+                <Title style={{ textAlign: 'center', marginBottom: 20, color: theme.colors.onSurface }}>TapTrack Login</Title>
                 <TextInput
                     label="Enter 4-digit PIN"
                     value={pin}

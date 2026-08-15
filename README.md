@@ -1,4 +1,4 @@
-# AutoTrackExpeno 📱💸
+# TapTrack 📱💸
 
 An **Android app** built with React Native that automatically tracks your expenses by reading SMS messages from your bank/UPI apps. It uses AI (DeepSeek) to categorize transactions and lets you confirm or ignore them with a single tap.
 

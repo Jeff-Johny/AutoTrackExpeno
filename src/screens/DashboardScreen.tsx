@@ -143,7 +143,7 @@ const DashboardScreen = ({ navigation }: any) => {
     return (
         <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
             <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
-                <Appbar.Content title="AutoTrackExpeno" titleStyle={{ color: theme.colors.onSurface }} />
+                <Appbar.Content title="TapTrack" titleStyle={{ color: theme.colors.onSurface }} />
                 <View>
                     <Appbar.Action 
                         icon="bell-outline" 

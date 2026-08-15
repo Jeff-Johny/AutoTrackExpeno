@@ -104,7 +104,7 @@ This resolves all symbol issues.
 ./gradlew installDebug
 ```
 
-App will install as "AutoTrackExpeno"
+App will install as "TapTrack"
 
 ### 2. Grant Permissions
 
