@@ -114,20 +114,32 @@ class DatabaseService {
       );
       console.log('DB: sms_transactions status/date index checked');
 
-      // Initialize default categories
-      const categories = [
-        'Food & Stationary',
-        'Petrol + transport',
-        'Household',
-        'cloth + cosmetics',
-        'Medical',
-        'Gift + Natilekku',
-        'outing',
-        'Car/bike maintenance',
-      ];
+      // Seed the 8 default categories — but only once, ever. This used to
+      // run unconditionally on every launch, which meant deleting a default
+      // category (e.g. via the Categories screen's delete confirmation)
+      // didn't stick: `INSERT OR IGNORE` re-inserted it the next time the
+      // app opened, silently resurrecting it (and resetting its budget
+      // limit to unset). The 'defaults_seeded' flag makes the seed
+      // first-run-only, same as any other one-time migration.
+      const seededCheck = this.db.execute('SELECT value FROM settings WHERE key = ?', ['defaults_seeded']);
+      const alreadySeeded = !!seededCheck.rows?._array?.[0];
+      if (!alreadySeeded) {
+        const categories = [
+          'Food & Stationary',
+          'Petrol + transport',
+          'Household',
+          'cloth + cosmetics',
+          'Medical',
+          'Gift + Natilekku',
+          'outing',
+          'Car/bike maintenance',
+        ];
 
-      for (const cat of categories) {
-        this.db.execute('INSERT OR IGNORE INTO categories (category, maxSpend) VALUES (?, ?)', [cat, 0]);
+        for (const cat of categories) {
+          this.db.execute('INSERT OR IGNORE INTO categories (category, maxSpend) VALUES (?, ?)', [cat, 0]);
+        }
+        this.db.execute('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['defaults_seeded', '1']);
+        console.log('DB: Default categories seeded (first run)');
       }
       console.log('DB: Initialization complete');
     } catch (error) {
