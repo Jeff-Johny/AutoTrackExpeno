@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
-import { Title, TextInput, Button, IconButton, Card, Appbar, Text, Portal, Dialog, FAB } from 'react-native-paper';
+import { Title, TextInput, Button, IconButton, Card, Appbar, Text, Portal, Dialog, FAB, Checkbox } from 'react-native-paper';
 import { useStore } from '../store/useStore';
 import { expenseService } from '../services/expense';
 import { useAppTheme } from '../theme/theme';
@@ -36,8 +36,22 @@ const CategoriesScreen = () => {
         setNewCategoryLimit('');
     };
 
-    const handleDeleteCategory = async (categoryName: string) => {
-        await expenseService.deleteCategory(categoryName);
+    const [deleteTarget, setDeleteTarget] = useState<CategoryBudget | null>(null);
+    const [deleteTransactionsToo, setDeleteTransactionsToo] = useState(false);
+
+    const openDeleteConfirm = (item: CategoryBudget) => {
+        setDeleteTarget(item);
+        setDeleteTransactionsToo(false);
+    };
+
+    const confirmDeleteCategory = async () => {
+        if (!deleteTarget) return;
+        if (deleteTransactionsToo) {
+            await expenseService.deleteExpensesByCategory(deleteTarget.category);
+        }
+        await expenseService.deleteCategory(deleteTarget.category);
+        setDeleteTarget(null);
+        setDeleteTransactionsToo(false);
     };
 
     const openBudgetEditor = (item: CategoryBudget) => {
@@ -123,7 +137,7 @@ const CategoriesScreen = () => {
                                     icon="delete"
                                     iconColor={theme.custom.critical}
                                     size={24}
-                                    onPress={() => handleDeleteCategory(item.category)}
+                                    onPress={() => openDeleteConfirm(item)}
                                 />
                             </Card.Content>
                         </Card>
@@ -188,6 +202,40 @@ const CategoriesScreen = () => {
                         )}
                         <Button onPress={() => setBudgetEditItem(null)}>Cancel</Button>
                         <Button onPress={saveBudget}>Save</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+
+            <Portal>
+                <Dialog visible={!!deleteTarget} onDismiss={() => setDeleteTarget(null)}>
+                    <Dialog.Title>Delete "{deleteTarget?.category}"?</Dialog.Title>
+                    <Dialog.Content>
+                        <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 13, marginBottom: 4 }}>
+                            This removes the category itself. This can't be undone.
+                        </Text>
+                        {deleteTarget && (() => {
+                            const count = expenses.filter((e) => e.category === deleteTarget.category).length;
+                            return count > 0 ? (
+                                <Checkbox.Item
+                                    label={`Also delete its ${count} transaction${count === 1 ? '' : 's'}`}
+                                    status={deleteTransactionsToo ? 'checked' : 'unchecked'}
+                                    onPress={() => setDeleteTransactionsToo(!deleteTransactionsToo)}
+                                    color={theme.custom.critical}
+                                    labelStyle={{ color: theme.colors.onSurface, fontSize: 14 }}
+                                    style={{ paddingHorizontal: 0, marginTop: 8 }}
+                                    position="leading"
+                                />
+                            ) : null;
+                        })()}
+                        {deleteTransactionsToo && (
+                            <Text style={{ color: theme.custom.critical, fontSize: 12, marginTop: 2 }}>
+                                Those transactions will be permanently deleted too.
+                            </Text>
+                        )}
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <Button onPress={() => setDeleteTarget(null)}>Cancel</Button>
+                        <Button onPress={confirmDeleteCategory} textColor={theme.custom.critical}>Delete</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>

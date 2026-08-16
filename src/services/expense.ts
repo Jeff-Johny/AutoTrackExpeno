@@ -44,18 +44,29 @@ export const expenseService = {
         );
         useStore.getState().addExpense(newExpense);
 
-        // Check budget overshoot
+        // Check budget overshoot — maxSpend is a *monthly* limit, so this
+        // has to sum only the expense's own month, not everything ever
+        // recorded in the category (that was firing "exceeded" alerts
+        // almost immediately every month once the all-time total passed
+        // the limit once). Note store.expenses already includes newExpense
+        // at this point (added just above), so it isn't added again here —
+        // the previous version summed it in twice.
         const store = useStore.getState();
         const categoryBudget = store.categories.find(c => c.category === expense.category);
         if (categoryBudget && categoryBudget.maxSpend > 0) {
+            const expenseDate = new Date(expense.date);
             const totalInCategory = store.expenses
-                .filter(e => e.category === expense.category)
-                .reduce((sum, e) => sum + e.amount, 0) + expense.amount;
+                .filter(e => {
+                    if (e.category !== expense.category || !e.date) return false;
+                    const d = new Date(e.date);
+                    return d.getMonth() === expenseDate.getMonth() && d.getFullYear() === expenseDate.getFullYear();
+                })
+                .reduce((sum, e) => sum + e.amount, 0);
 
             if (totalInCategory > categoryBudget.maxSpend) {
                 notificationService.notify(
                     'Budget Alert!',
-                    `You have exceeded your budget for ${expense.category}. Total: ₹${totalInCategory}`
+                    `You have exceeded your monthly budget for ${expense.category}. This month: ₹${totalInCategory.toFixed(2)}`
                 );
             }
         }
@@ -79,6 +90,14 @@ export const expenseService = {
         const db = dbService.getDb();
         db.execute('DELETE FROM expenses WHERE id = ?', [id]);
         useStore.getState().deleteExpense(id);
+    },
+
+    /** Used when deleting a category with "also delete its transactions" checked. */
+    async deleteExpensesByCategory(category: string) {
+        const db = dbService.getDb();
+        db.execute('DELETE FROM expenses WHERE category = ?', [category]);
+        const remaining = useStore.getState().expenses.filter(e => e.category !== category);
+        useStore.getState().setExpenses(remaining);
     },
 
     async fetchCategories() {
