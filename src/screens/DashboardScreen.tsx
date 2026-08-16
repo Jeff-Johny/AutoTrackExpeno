@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Card, Title, Paragraph, Appbar, Badge, List, Divider } from 'react-native-paper';
+import { Text, Card, Title, Paragraph, Appbar, Badge, List, Divider, Portal, Dialog, Button } from 'react-native-paper';
 import { PieChart } from 'react-native-chart-kit';
 import { Calendar } from 'react-native-calendars';
 import { useStore } from '../store/useStore';
@@ -21,6 +21,23 @@ const DashboardScreen = ({ navigation }: any) => {
         new Date().toISOString().split('T')[0]
     );
     const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+    const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+
+    const openExpenseEdit = (expense: any) => {
+        setUnsureData({
+            reviewExpenseId: expense.id,
+            smsText: expense.smsText || '',
+            sender: expense.smsSender || '',
+            aiResult: {
+                amount: expense.amount,
+                category: expense.category,
+                description: expense.description,
+                payee: null,
+                isSpending: true,
+                isCertain: true,
+            },
+        });
+    };
 
     useEffect(() => {
         expenseService.fetchAll();
@@ -141,6 +158,19 @@ const DashboardScreen = ({ navigation }: any) => {
         })
         .sort((a, b) => b.pct - a.pct);
 
+    // Transactions behind the currently expanded budget row (tapped from
+    // "Monthly Budgets" below), scoped to the same category + selected month.
+    const expandedCategoryExpenses = expandedCategory
+        ? expenses
+            .filter((e) => {
+                if (e.category !== expandedCategory || !e.date) return false;
+                const expenseDate = new Date(e.date);
+                return expenseDate.getMonth() === selectedMonthNum && expenseDate.getFullYear() === selectedYear;
+            })
+            .sort((a, b) => (b.date > a.date ? 1 : -1))
+        : [];
+    const expandedCategoryTotal = expandedCategoryExpenses.reduce((sum, e) => sum + e.amount, 0);
+
     return (
         <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
             <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
@@ -227,21 +257,7 @@ const DashboardScreen = ({ navigation }: any) => {
                                         <React.Fragment key={expense.id || i}>
                                             <TouchableOpacity
                                                 style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}
-                                                onPress={() => {
-                                                    setUnsureData({
-                                                        reviewExpenseId: expense.id,
-                                                        smsText: expense.smsText || '',
-                                                        sender: expense.smsSender || '',
-                                                        aiResult: {
-                                                            amount: expense.amount,
-                                                            category: expense.category,
-                                                            description: expense.description,
-                                                            payee: null,
-                                                            isSpending: true,
-                                                            isCertain: true,
-                                                        },
-                                                    });
-                                                }}
+                                                onPress={() => openExpenseEdit(expense)}
                                             >
                                                 <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: catColor, marginRight: 12 }} />
                                                 <View style={{ flex: 1 }}>
@@ -273,7 +289,11 @@ const DashboardScreen = ({ navigation }: any) => {
                                     {budgetData.map((b, i) => {
                                         const statusColor = theme.custom[b.status];
                                         return (
-                                            <View key={b.category} style={{ marginTop: i === 0 ? 0 : 14 }}>
+                                            <TouchableOpacity
+                                                key={b.category}
+                                                style={{ marginTop: i === 0 ? 0 : 14 }}
+                                                onPress={() => setExpandedCategory(b.category)}
+                                            >
                                                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                                                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: b.color, marginRight: 8 }} />
                                                     <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: theme.colors.onSurface }} numberOfLines={1}>
@@ -285,6 +305,7 @@ const DashboardScreen = ({ navigation }: any) => {
                                                     <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 12, fontWeight: '700', color: statusColor, marginLeft: 8, minWidth: 36, textAlign: 'right' }}>
                                                         {Math.max(0, Math.min(b.pct, 999)).toFixed(0)}%
                                                     </Text>
+                                                    <List.Icon icon="chevron-right" color={theme.colors.outline} style={{ margin: 0, marginLeft: -4 }} />
                                                 </View>
                                                 <View style={{ height: 6, borderRadius: 99, backgroundColor: theme.colors.surfaceVariant, overflow: 'hidden' }}>
                                                     <View style={{ height: '100%', borderRadius: 99, width: `${Math.max(0, Math.min(b.pct, 100))}%`, backgroundColor: statusColor }} />
@@ -294,7 +315,7 @@ const DashboardScreen = ({ navigation }: any) => {
                                                         Over by ₹{(b.spent - b.maxSpend).toFixed(0)}
                                                     </Text>
                                                 )}
-                                            </View>
+                                            </TouchableOpacity>
                                         );
                                     })}
                                 </Card.Content>
@@ -321,6 +342,55 @@ const DashboardScreen = ({ navigation }: any) => {
                 )}
             </View>
             </ScrollView>
+
+            <Portal>
+                <Dialog visible={!!expandedCategory} onDismiss={() => setExpandedCategory(null)} style={{ maxHeight: '80%' }}>
+                    <Dialog.Title>{expandedCategory}</Dialog.Title>
+                    <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12.5, marginHorizontal: 24, marginTop: -12, marginBottom: 8 }}>
+                        {monthName} · <Text style={{ fontFamily: theme.custom.ledgerFont, color: expandedCategoryTotal < 0 ? theme.custom.good : theme.colors.onSurfaceVariant }}>{formatSignedAmount(expandedCategoryTotal)}</Text> total
+                    </Text>
+                    <Dialog.ScrollArea style={{ paddingHorizontal: 0 }}>
+                        <ScrollView>
+                            {expandedCategoryExpenses.length > 0 ? (
+                                <View style={{ paddingHorizontal: 24 }}>
+                                    {expandedCategoryExpenses.map((expense, i) => (
+                                        <React.Fragment key={expense.id || i}>
+                                            <TouchableOpacity
+                                                style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10 }}
+                                                onPress={() => {
+                                                    setExpandedCategory(null);
+                                                    openExpenseEdit(expense);
+                                                }}
+                                            >
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.onSurface }} numberOfLines={1}>
+                                                        {expense.description || expense.smsText || 'Manual Entry'}
+                                                    </Text>
+                                                    <Text style={{ fontSize: 11, color: theme.colors.onSurfaceVariant }}>
+                                                        {expense.date ? expense.date.split('T')[0] : ''}
+                                                    </Text>
+                                                </View>
+                                                <Text style={{ fontFamily: theme.custom.ledgerFont, fontWeight: '600', fontSize: 13, color: expense.amount < 0 ? theme.custom.good : theme.colors.onSurface, marginRight: 6 }}>
+                                                    {formatSignedAmount(expense.amount)}
+                                                </Text>
+                                                <List.Icon icon="chevron-right" color={theme.colors.outline} style={{ margin: 0 }} />
+                                            </TouchableOpacity>
+                                            {i < expandedCategoryExpenses.length - 1 && <Divider />}
+                                        </React.Fragment>
+                                    ))}
+                                </View>
+                            ) : (
+                                <Text style={{ textAlign: 'center', color: theme.colors.onSurfaceVariant, paddingVertical: 20 }}>
+                                    No expenses in this category this month.
+                                </Text>
+                            )}
+                        </ScrollView>
+                    </Dialog.ScrollArea>
+                    <Dialog.Actions>
+                        <Button onPress={() => setExpandedCategory(null)}>Close</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
         </View>
     );
 };
