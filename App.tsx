@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Provider as PaperProvider, Portal, Modal, Button, Text, Title, TextInput, ProgressBar, Snackbar, Chip } from 'react-native-paper';
-import { View, Dimensions, LogBox, useColorScheme, TouchableOpacity } from 'react-native';
+import { Provider as PaperProvider, Portal, Button, Text, Title, TextInput, ProgressBar, Snackbar, Chip } from 'react-native-paper';
+import { View, LogBox, useColorScheme, TouchableOpacity } from 'react-native';
+import BottomSheet from './src/components/BottomSheet';
 
 // Suppress React 19 strict Fragment prop warning from react-native-screens internals.
 // This is a known incompatibility (react-native-screens <= 4.19) and does NOT affect functionality.
@@ -317,11 +318,7 @@ const App = () => {
       <MainNavigator isDark={isDark} theme={theme} />
 
       <Portal>
-        <Modal
-          visible={!!unsureData}
-          onDismiss={() => setUnsureData(null)}
-          contentContainerStyle={{ padding: 22, backgroundColor: theme.colors.surface, margin: 20, borderRadius: 22 }}
-        >
+        <BottomSheet visible={!!unsureData} onDismiss={() => setUnsureData(null)}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <Title style={{ color: theme.colors.onSurface }}>
               {unsureData?.reviewExpenseId
@@ -440,13 +437,9 @@ const App = () => {
               {unsureData?.reviewExpenseId ? 'Update' : isCredit ? 'Confirm Refund' : 'Confirm Spend'}
             </Button>
           </View>
-        </Modal>
+        </BottomSheet>
 
-        <Modal
-          visible={!!autoTrackedSummary}
-          onDismiss={() => setAutoTrackedSummary(null)}
-          contentContainerStyle={{ padding: 22, backgroundColor: theme.colors.surface, margin: 20, borderRadius: 22, maxHeight: Dimensions.get('window').height * 0.8 }}
-        >
+        <BottomSheet visible={!!autoTrackedSummary} onDismiss={() => setAutoTrackedSummary(null)}>
           <Title style={{ color: theme.colors.onSurface }}>Auto-Tracked Summary</Title>
           <Text style={{ marginBottom: 15, color: theme.colors.onSurfaceVariant }}>
             While you were away, {autoTrackedSummary?.length} expenses were automatically categorized based on your learned patterns.
@@ -476,7 +469,7 @@ const App = () => {
             })}
           </View>
           <Button mode="contained" onPress={() => setAutoTrackedSummary(null)}>Dismiss</Button>
-        </Modal>
+        </BottomSheet>
 
         <Snackbar
           visible={syncStatus === 'syncing'}

@@ -65,6 +65,9 @@ export const lightTheme = {
         critical: '#C23B3B',
         criticalTint: '#FBE3E2',
         categoryColors: CATEGORY_PALETTE_LIGHT,
+        // Bottom-sheet backdrop — an ink-tinted scrim rather than flat black,
+        // per the "Ledger Ink" redesign proposal's modal spec.
+        scrim: 'rgba(20,16,10,0.55)',
     },
 };
 
@@ -107,6 +110,7 @@ export const darkTheme = {
         critical: '#E97272',
         criticalTint: 'rgba(233,114,114,0.16)',
         categoryColors: CATEGORY_PALETTE_DARK,
+        scrim: 'rgba(0,0,0,0.6)',
     },
 };
 
