@@ -349,15 +349,26 @@ const App = () => {
               {unsureData.smsText}
             </Text>
           ) : null}
-          {!unsureData?.reviewExpenseId && (
-            <View style={{ marginBottom: 10 }}>
-              <Chip
-                icon="calendar"
-                style={{ backgroundColor: theme.colors.surfaceVariant, alignSelf: 'flex-start' }}
-                textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
-              >
-                {formatFriendlyDate(unsureData?.date)}
-              </Chip>
+          {(!unsureData?.reviewExpenseId || unsureData?.aiResult?.payee) && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+              {!unsureData?.reviewExpenseId && (
+                <Chip
+                  icon="calendar"
+                  style={{ backgroundColor: theme.colors.surfaceVariant }}
+                  textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
+                >
+                  {formatFriendlyDate(unsureData?.date)}
+                </Chip>
+              )}
+              {unsureData?.aiResult?.payee ? (
+                <Chip
+                  icon="store"
+                  style={{ backgroundColor: theme.colors.surfaceVariant }}
+                  textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
+                >
+                  {unsureData.aiResult.payee}
+                </Chip>
+              ) : null}
             </View>
           )}
           <TextInput
@@ -385,19 +396,6 @@ const App = () => {
               This is money coming back (refund / credit)
             </Chip>
           </TouchableOpacity>
-          {unsureData?.aiResult?.payee ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}>Payee:</Text>
-              <Chip
-                icon="store"
-                style={{ backgroundColor: theme.colors.surfaceVariant }}
-                textStyle={{ color: theme.colors.onSurfaceVariant, fontWeight: 'bold' }}
-              >
-                {unsureData.aiResult.payee}
-              </Chip>
-            </View>
-          ) : null}
-
           <Title style={{ fontSize: 16, marginTop: 10, color: theme.colors.onSurface }}>Select Category</Title>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10, marginTop: 6 }}>
             {categories.map((cat: any) => {
