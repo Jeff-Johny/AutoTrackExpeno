@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Provider as PaperProvider, Portal, Button, Text, Title, TextInput, ProgressBar, Snackbar, Chip } from 'react-native-paper';
-import { View, LogBox, useColorScheme, TouchableOpacity } from 'react-native';
+import { Provider as PaperProvider, Portal, Button, Text, Title, TextInput, Snackbar, Chip } from 'react-native-paper';
+import { View, LogBox, useColorScheme, TouchableOpacity, ActivityIndicator } from 'react-native';
 import BottomSheet from './src/components/BottomSheet';
 
 // Suppress React 19 strict Fragment prop warning from react-native-screens internals.
@@ -313,7 +313,25 @@ const App = () => {
   return (
     <PaperProvider theme={theme}>
       {syncStatus === 'syncing' && (
-        <ProgressBar indeterminate color={theme.colors.primary} style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999, height: 4 }} />
+        // A floating pill beats the old pairing of a thin top ProgressBar
+        // plus a bottom Snackbar with duration={Infinity} — that Snackbar
+        // had no way to dismiss itself and sat directly over the tab bar
+        // labels for however long the sync took. This is self-contained,
+        // clears the moment syncStatus changes, and never blocks
+        // navigation.
+        <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999, alignItems: 'center', paddingTop: 10 }}>
+          <View
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 8,
+              backgroundColor: theme.colors.primary, paddingHorizontal: 14, paddingVertical: 8,
+              borderRadius: 99, elevation: 4,
+              shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+            }}
+          >
+            <ActivityIndicator size={14} color={theme.colors.onPrimary} />
+            <Text style={{ color: theme.colors.onPrimary, fontSize: 12, fontWeight: '700' }}>Syncing recent transactions…</Text>
+          </View>
+        </View>
       )}
       <MainNavigator isDark={isDark} theme={theme} />
 
@@ -470,18 +488,13 @@ const App = () => {
         </BottomSheet>
 
         <Snackbar
-          visible={syncStatus === 'syncing'}
-          onDismiss={() => {}}
-          duration={Infinity}
-          style={{ backgroundColor: theme.colors.inverseSurface }}
-        >
-          Syncing recent transactions...
-        </Snackbar>
-
-        <Snackbar
           visible={syncStatus === 'completed'}
           onDismiss={() => setSyncStatus('idle')}
           duration={3000}
+          // Paper docks Snackbar at the screen bottom with no awareness of
+          // this app's custom tab bar underneath it — left alone it sat
+          // directly on top of the Dashboard/Transactions/... labels.
+          wrapperStyle={{ bottom: 64 }}
           action={{
             label: 'OK',
             onPress: () => setSyncStatus('idle'),

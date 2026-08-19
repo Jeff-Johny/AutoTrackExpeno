@@ -74,18 +74,6 @@ const CategoriesScreen = () => {
         setBudgetInput('');
     };
 
-    // This-month spend per category, for the budget bars below — same
-    // month-scoping logic as DashboardScreen's chartData.
-    const now = new Date();
-    const spendThisMonth = (categoryName: string) =>
-        expenses
-            .filter((e) => {
-                if (e.category !== categoryName || !e.date) return false;
-                const d = new Date(e.date);
-                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-            })
-            .reduce((sum, e) => sum + e.amount, 0);
-
     return (
         <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
             <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
@@ -99,11 +87,7 @@ const CategoriesScreen = () => {
                 keyExtractor={(item) => item.category}
                 renderItem={({ item }) => {
                     const catColor = getCategoryColor(item.category, theme.custom.categoryColors);
-                    const spent = spendThisMonth(item.category);
                     const hasBudget = item.maxSpend > 0;
-                    const pct = hasBudget ? (spent / item.maxSpend) * 100 : 0;
-                    const status = pct > 100 ? 'critical' : pct > 90 ? 'warning' : 'good';
-                    const statusColor = theme.custom[status];
 
                     return (
                         <Card style={styles.categoryCard}>
@@ -112,25 +96,14 @@ const CategoriesScreen = () => {
                                     <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: catColor, marginRight: 10 }} />
                                     <View style={{ flex: 1 }}>
                                         <Title style={[styles.categoryName, { color: theme.colors.onSurface }]}>{item.category}</Title>
-                                        {hasBudget ? (
-                                            <TouchableOpacity onPress={() => openBudgetEditor(item)}>
-                                                <View style={styles.budgetRow}>
-                                                    <Text style={{ fontSize: 10, color: theme.colors.onSurfaceVariant }}>
-                                                        {pct > 100
-                                                            ? <Text style={{ color: statusColor, fontWeight: '700' }}>over by ₹{(spent - item.maxSpend).toFixed(0)}</Text>
-                                                            : `₹${item.maxSpend.toFixed(0)} monthly limit`}
-                                                    </Text>
-                                                    <Text style={{ fontSize: 10, fontWeight: '700', color: statusColor }}>{Math.max(0, Math.min(pct, 999)).toFixed(0)}%</Text>
-                                                </View>
-                                                <View style={[styles.budgetBar, { backgroundColor: theme.colors.surfaceVariant }]}>
-                                                    <View style={{ height: '100%', borderRadius: 99, width: `${Math.max(0, Math.min(pct, 100))}%`, backgroundColor: statusColor }} />
-                                                </View>
-                                            </TouchableOpacity>
-                                        ) : (
-                                            <TouchableOpacity onPress={() => openBudgetEditor(item)}>
-                                                <Text style={{ fontSize: 11, color: theme.colors.primary, marginTop: 2 }}>Set monthly limit</Text>
-                                            </TouchableOpacity>
-                                        )}
+                                        {/* Just the configured limit — how much of it is used so far
+                                            this month is a Dashboard concern (see "Monthly Budgets"),
+                                            not something this general category-management list scopes to. */}
+                                        <TouchableOpacity onPress={() => openBudgetEditor(item)}>
+                                            <Text style={{ fontSize: 11, color: hasBudget ? theme.colors.onSurfaceVariant : theme.colors.primary, marginTop: 2 }}>
+                                                {hasBudget ? `₹${item.maxSpend.toFixed(0)} monthly limit` : 'Set monthly limit'}
+                                            </Text>
+                                        </TouchableOpacity>
                                     </View>
                                 </View>
                                 <IconButton
@@ -272,19 +245,6 @@ const styles = StyleSheet.create({
     },
     categoryName: {
         fontSize: 16,
-    },
-    budgetRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 2,
-        marginRight: 8,
-    },
-    budgetBar: {
-        height: 4,
-        borderRadius: 99,
-        overflow: 'hidden',
-        marginTop: 4,
-        marginRight: 8,
     },
     fab: {
         position: 'absolute',

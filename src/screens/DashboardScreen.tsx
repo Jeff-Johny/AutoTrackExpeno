@@ -69,6 +69,23 @@ const DashboardScreen = ({ navigation }: any) => {
 
     const calendarCurrentDate = formatDateLocal(new Date(selectedYear, selectedMonthNum, 1));
 
+    // "Spent on 2026-08-16" read like a raw ISO timestamp rather than a
+    // clear stat label — this gives "Today" / "Yesterday" / "16 Aug 2026"
+    // instead, matching the friendly-date treatment used for SMS timestamps
+    // elsewhere in the app.
+    const formatFriendlySelectedDate = (dateStr: string) => {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const date = new Date(y, (m || 1) - 1, d || 1);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const sameDay = (a: Date, b: Date) =>
+            a.getDate() === b.getDate() && a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+        if (sameDay(date, today)) return 'Today';
+        if (sameDay(date, yesterday)) return 'Yesterday';
+        return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
     const handlePrevMonth = () => {
         const newMonth = new Date(selectedMonth);
         newMonth.setMonth(newMonth.getMonth() - 1);
@@ -244,9 +261,14 @@ const DashboardScreen = ({ navigation }: any) => {
                         />
                     </Card>
 
-                    <Title style={{ marginTop: 8, marginBottom: 8, color: theme.colors.onBackground }}>
-                        Spent on {selectedDate}: <Text style={{ fontFamily: theme.custom.ledgerFont, color: selectedDayTotal < 0 ? theme.custom.good : theme.colors.onBackground }}>{formatSignedAmount(selectedDayTotal)}</Text>
-                    </Title>
+                    <View style={{ marginTop: 8, marginBottom: 10 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant }}>
+                            Spent on {formatFriendlySelectedDate(selectedDate)}
+                        </Text>
+                        <Text style={{ fontFamily: theme.custom.ledgerFont, fontSize: 22, fontWeight: '700', marginTop: 2, color: selectedDayTotal < 0 ? theme.custom.good : theme.colors.onBackground }}>
+                            {formatSignedAmount(selectedDayTotal)}
+                        </Text>
+                    </View>
 
                     {selectedDayExpenses.length > 0 ? (
                         <Card style={{ marginBottom: 20 }}>
